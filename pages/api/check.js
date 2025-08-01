@@ -2,7 +2,7 @@ import { google } from "googleapis";
 
 export default async function handler(req, res) {
   const { query } = req;
-  const search = (query.site || "").trim(); // nhận dữ liệu từ ô nhập (có thể là site hoặc mã)
+  const search = (query.site || "").trim(); // Nhận dữ liệu từ ô nhập (có thể là site hoặc mã)
 
   if (!search) {
     return res.status(400).json({ message: "Vui lòng nhập site hoặc mã" });
@@ -27,7 +27,7 @@ export default async function handler(req, res) {
     // Đọc dữ liệu từ Sheet
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: sheetId,
-      range: "Sheet1!A:Q", // Đọc tất cả các cột từ A -> Q
+      range: "Sheet1!A:Q", // Đọc toàn bộ dữ liệu A->Q
     });
 
     const rows = response.data.values;
@@ -39,10 +39,10 @@ export default async function handler(req, res) {
     const siteIndex = headers.indexOf("Site");
     const maIndex = headers.indexOf("Mã");
 
-    // Tìm site (trả về 1 dòng)
+    // ✅ Tìm theo Site
     const siteRow = rows.find((row) => row[siteIndex] === search);
 
-    // Tìm theo mã (trả về nhiều dòng)
+    // ✅ Tìm theo Mã (trả về nhiều dòng)
     const maRows = rows.filter((row) => row[maIndex] === search);
 
     if (siteRow) {
@@ -66,7 +66,7 @@ export default async function handler(req, res) {
 
     res.status(404).json({ message: "Không tìm thấy site hoặc mã" });
   } catch (error) {
-    console.error("Lỗi Google API:", error);
+    console.error("❌ Lỗi Google API:", error);
     res.status(500).json({ message: "Lỗi server", error: error.message });
   }
 }
