@@ -1,56 +1,63 @@
 import { google } from "googleapis";
 
 export default async function handler(req, res) {
-  if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" });
-  }
-
   try {
-    const { keyword } = req.body;
+    const { keyword } = req.query;
 
-    // ✅ Nếu không có input → báo lỗi
-    if (!keyword || keyword.trim() === "") {
+    if (!keyword) {
       return res.status(400).json({ error: "Thiếu từ khóa tìm kiếm" });
     }
 
-    // ✅ Tách keyword nếu nhập nhiều (phân cách bằng dấu cách, dấu phẩy hoặc xuống dòng)
-    const keywords = keyword.split(/[\s,\n]+/).map(k => k.trim().toLowerCase());
+    // 🔥 Dọn input
+    const cleanInput = keyword
+      .toLowerCase()
+      .replace(/^https?:\/\//, "")
+      .replace(/^www\./, "")
+      .trim();
 
-    // ✅ Setup Google Sheets API
+    // 🔥 Google Sheets API
     const auth = new google.auth.GoogleAuth({
       credentials: JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT),
       scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"],
     });
 
     const sheets = google.sheets({ version: "v4", auth });
-    const response = await sheets.spreadsheets.values.get({
+    const sheet = await sheets.spreadsheets.values.get({
       spreadsheetId: process.env.SHEET_ID,
-      range: "NCC MIU SEO!A1:Q",  // ✅ Đúng tên sheet bạn đang dùng
+      range: "Sheet1!A1:Q",
     });
 
-    const rows = response.data.values;
-
+    const rows = sheet.data.values;
     if (!rows || rows.length === 0) {
-      return res.status(404).json({ error: "Không tìm thấy dữ liệu trong sheet" });
+      return res.status(404).json({ error: "Không có dữ liệu" });
     }
 
-    // ✅ Lọc kết quả nếu cột Site (E) hoặc cột Mã (Q) có chứa keyword
-    const results = rows.filter((row) => {
-      const site = (row[4] || "").toLowerCase();
-      const code = (row[16] || "").toLowerCase();
-      return keywords.some(k => site.includes(k) || code.includes(k));
+    // 🔥 Bỏ hàng tiêu đề
+    const data = rows.slice(1);
+
+    // 🔥 Dọn dữ liệu trong sheet (cột Site và cột Mã)
+    const clean = (str) =>
+      (str || "")
+        .toLowerCase()
+        .replace(/^https?:\/\//, "")
+        .replace(/^www\./, "")
+        .trim();
+
+    // 🔥 Lọc site hoặc mã
+    const results = data.filter((row) => {
+      const site = clean(row[4]);   // cột Site
+      const code = clean(row[16]);  // cột Mã
+      return site.includes(cleanInput) || code.includes(cleanInput);
     });
 
-    // ✅ Nếu không tìm thấy site hoặc mã
     if (results.length === 0) {
-      return res.status(404).json({ error: "Không tìm thấy kết quả" });
+      return res.status(404).json({ error: "Không tìm thấy" });
     }
 
-    // ✅ Trả về tất cả kết quả dạng JSON
-    return res.status(200).json({ data: results });
+    return res.status(200).json({ results });
 
-  } catch (error) {
-    console.error("❌ Lỗi server:", error);
-    return res.status(500).json({ error: "Lỗi server", details: error.message });
+  } catch (err) {
+    console.error("🔥 Lỗi server:", err);
+    return res.status(500).json({ error: "Lỗi server" });
   }
 }
