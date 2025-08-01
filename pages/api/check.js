@@ -1,33 +1,25 @@
 import { google } from "googleapis";
 
 export default async function handler(req, res) {
-  const { query } = req;
-  const search = (query.site || "").trim(); // Nhận dữ liệu từ ô nhập (có thể là site hoặc mã)
+  const { site } = req.query;
 
-  if (!search) {
-    return res.status(400).json({ message: "Vui lòng nhập site hoặc mã" });
+  if (!site) {
+    return res.status(400).json({ message: "Thiếu tham số ?site=" });
   }
 
   try {
-    // Lấy credentials từ biến môi trường Vercel
-    const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT);
-    const sheetId = process.env.SHEET_ID;
+    // ✅ Load service account từ biến môi trường
+    const auth = new google.auth.GoogleAuth({
+      credentials: JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT),
+      scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"],
+    });
 
-    // Tạo Google API client
-    const client = new google.auth.JWT(
-      credentials.client_email,
-      null,
-      credentials.private_key,
-      ["https://www.googleapis.com/auth/spreadsheets.readonly"]
-    );
+    const sheets = google.sheets({ version: "v4", auth });
 
-    // Kết nối Google Sheets API
-    const sheets = google.sheets({ version: "v4", auth: client });
-
-    // Đọc dữ liệu từ Sheet
+    // ✅ Lấy dữ liệu từ Google Sheet
     const response = await sheets.spreadsheets.values.get({
-      spreadsheetId: sheetId,
-      range: "Sheet1!A:Q", // Đọc toàn bộ dữ liệu A->Q
+      spreadsheetId: process.env.SHEET_ID,
+      range: "A1:Q10000", // lấy hết dữ liệu (có thể tăng nếu sheet lớn)
     });
 
     const rows = response.data.values;
@@ -35,38 +27,38 @@ export default async function handler(req, res) {
       return res.status(404).json({ message: "Không có dữ liệu" });
     }
 
+    // ✅ Lấy header (hàng đầu tiên)
     const headers = rows[0];
-    const siteIndex = headers.indexOf("Site");
-    const maIndex = headers.indexOf("Mã");
+    const dataRows = rows.slice(1);
 
-    // ✅ Tìm theo Site
-    const siteRow = rows.find((row) => row[siteIndex] === search);
+    // ✅ Tìm theo “Site” hoặc “Mã”
+    const bySite = dataRows.find((r) => r[4] && r[4].toLowerCase() === site.toLowerCase());
+    const byMa = dataRows.filter((r) => r[16] && r[16].toLowerCase() === site.toLowerCase());
 
-    // ✅ Tìm theo Mã (trả về nhiều dòng)
-    const maRows = rows.filter((row) => row[maIndex] === search);
-
-    if (siteRow) {
-      const result = {};
-      headers.forEach((header, i) => {
-        result[header] = siteRow[i] || "";
+    if (bySite) {
+      // Nếu tìm thấy site -> trả về 1 object
+      const obj = {};
+      headers.forEach((h, idx) => {
+        obj[h] = bySite[idx] || "";
       });
-      return res.status(200).json({ type: "site", data: result });
-    }
 
-    if (maRows.length > 0) {
-      const results = maRows.map((row) => {
+      return res.status(200).json({ type: "site", data: obj });
+    } else if (byMa.length > 0) {
+      // Nếu tìm thấy mã -> trả về nhiều dòng
+      const arr = byMa.map((row) => {
         const obj = {};
-        headers.forEach((header, i) => {
-          obj[header] = row[i] || "";
+        headers.forEach((h, idx) => {
+          obj[h] = row[idx] || "";
         });
         return obj;
       });
-      return res.status(200).json({ type: "ma", data: results });
-    }
 
-    res.status(404).json({ message: "Không tìm thấy site hoặc mã" });
-  } catch (error) {
-    console.error("❌ Lỗi Google API:", error);
-    res.status(500).json({ message: "Lỗi server", error: error.message });
+      return res.status(200).json({ type: "ma", headers, data: arr });
+    } else {
+      return res.status(404).json({ message: "Không tìm thấy site hoặc mã" });
+    }
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ message: "Lỗi server", error: err.message });
   }
 }
