@@ -8,9 +8,7 @@ export default function Home() {
   const [homeData, setHomeData] = useState([]);
   const [activeSheet, setActiveSheet] = useState("GP");
   const [error, setError] = useState("");
-
-  // 🟢 Theo dõi trạng thái ghi chú đã expand hay chưa
-  const [expandedRows, setExpandedRows] = useState({});
+  const [expanded, setExpanded] = useState({}); // 🔥 trạng thái mở rộng ghi chú
 
   const handleSearch = async () => {
     setError("");
@@ -31,44 +29,23 @@ export default function Home() {
     }
   };
 
-  // 🟢 Hàm lấy giá từ TEXT hoặc HOME nếu activeSheet thay đổi
   const getPriceFromOtherSheet = (site, sheet) => {
     const source = sheet === "TEXT" ? textData : homeData;
-    const match = source.find((row) => row[4] === site);
+    const match = source.find(row => row[4] === site);
     if (match) {
       return { giaBan: match[9] || "", giaMua: match[10] || "" };
     }
     return null;
   };
 
-  // 🟢 Toggle ghi chú cho từng row
-  const toggleExpand = (idx) => {
-    setExpandedRows((prev) => ({
-      ...prev,
-      [idx]: !prev[idx],
-    }));
-  };
-
   return (
-    <div
-      style={{
-        padding: "20px",
-        fontFamily: "Arial",
-        backgroundColor: "#fafafa",
-        minHeight: "100vh",
-      }}
-    >
+    <div style={{ padding: "20px", fontFamily: "Arial", backgroundColor: "#fafafa", minHeight: "100vh" }}>
       <h2>Tool Check Site (Demo)</h2>
 
       {/* Ô nhập */}
       <textarea
         rows={3}
-        style={{
-          width: "450px",
-          padding: "8px",
-          borderRadius: "5px",
-          border: "1px solid #ccc",
-        }}
+        style={{ width: "450px", padding: "8px", borderRadius: "5px", border: "1px solid #ccc" }}
         placeholder="Nhập site hoặc mã (nhiều giá trị cách nhau bằng dấu phẩy hoặc xuống dòng)"
         value={input}
         onChange={(e) => setInput(e.target.value)}
@@ -95,12 +72,8 @@ export default function Home() {
       {/* Nút chuyển sheet */}
       {data.length > 0 && (
         <div style={{ marginTop: "20px" }}>
-          <button onClick={() => setActiveSheet("GP")} style={{ marginRight: "10px" }}>
-            GP
-          </button>
-          <button onClick={() => setActiveSheet("TEXT")} style={{ marginRight: "10px" }}>
-            TEXT
-          </button>
+          <button onClick={() => setActiveSheet("GP")} style={{ marginRight: "10px" }}>GP</button>
+          <button onClick={() => setActiveSheet("TEXT")} style={{ marginRight: "10px" }}>TEXT</button>
           <button onClick={() => setActiveSheet("HOME")}>HOME</button>
         </div>
       )}
@@ -139,7 +112,7 @@ export default function Home() {
               const site = row[4];
               let rowCopy = [...row];
 
-              // 🟢 Nếu chuyển sang TEXT hoặc HOME -> chỉ thay Giá Bán (cột 9) & Giá Mua (cột 10)
+              // Nếu chuyển sang TEXT hoặc HOME -> chỉ thay Giá Bán (cột 9) & Giá Mua (cột 10)
               if (activeSheet !== "GP") {
                 const newPrice = getPriceFromOtherSheet(site, activeSheet);
                 if (newPrice) {
@@ -150,40 +123,25 @@ export default function Home() {
 
               return (
                 <tr key={idx} style={{ borderBottom: "1px solid #eee" }}>
-                  {rowCopy.map((cell, i) => {
-                    // 🟢 Check nếu là cột Ghi Chú (cột 8 - index 8)
-                    if (i === 8 && cell && cell.length > 50) {
-                      const isExpanded = expandedRows[idx];
-                      const shortText = cell.slice(0, 50) + "...";
-
-                      return (
-                        <td key={i} style={{ padding: "8px", textAlign: "center" }}>
-                          <span>{isExpanded ? cell : shortText}</span>
-                          <br />
-                          <button
-                            onClick={() => toggleExpand(idx)}
-                            style={{
-                              marginTop: "4px",
-                              padding: "2px 6px",
-                              fontSize: "12px",
-                              border: "none",
-                              borderRadius: "3px",
-                              background: "#ddd",
-                              cursor: "pointer",
-                            }}
+                  {rowCopy.map((cell, i) => (
+                    <td key={i} style={{ padding: "8px", textAlign: "center" }}>
+                      {i === 8 && typeof cell === "string" && cell.length > 30 ? ( // 🔥 cột Ghi Chú (index 8)
+                        <>
+                          {expanded[idx] ? cell : `${cell.slice(0, 30)}... `}
+                          <span
+                            style={{ color: "blue", cursor: "pointer" }}
+                            onClick={() =>
+                              setExpanded((prev) => ({ ...prev, [idx]: !prev[idx] }))
+                            }
                           >
-                            {isExpanded ? "Ẩn bớt" : "Xem thêm"}
-                          </button>
-                        </td>
-                      );
-                    }
-
-                    return (
-                      <td key={i} style={{ padding: "8px", textAlign: "center" }}>
-                        {cell}
-                      </td>
-                    );
-                  })}
+                            {expanded[idx] ? "Thu gọn" : "Xem thêm"}
+                          </span>
+                        </>
+                      ) : (
+                        cell
+                      )}
+                    </td>
+                  ))}
                 </tr>
               );
             })}
