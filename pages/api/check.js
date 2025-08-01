@@ -2,62 +2,46 @@ import { google } from "googleapis";
 
 export default async function handler(req, res) {
   try {
-    const { keyword } = req.query;
-
-    if (!keyword) {
-      return res.status(400).json({ error: "Thiếu từ khóa tìm kiếm" });
-    }
-
-    // 🔥 Dọn input
-    const cleanInput = keyword
-      .toLowerCase()
-      .replace(/^https?:\/\//, "")
-      .replace(/^www\./, "")
-      .trim();
-
-    // 🔥 Google Sheets API
     const auth = new google.auth.GoogleAuth({
       credentials: JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT),
       scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"],
     });
 
     const sheets = google.sheets({ version: "v4", auth });
-    const sheet = await sheets.spreadsheets.values.get({
-      spreadsheetId: process.env.SHEET_ID,
-      range: "Sheet1!A1:Q",
-    });
 
-    const rows = sheet.data.values;
+    const sheetId = process.env.SHEET_ID;
+    const range = "Sheet1!A2:Q"; // đọc tất cả dữ liệu từ cột A đến Q
+
+    const response = await sheets.spreadsheets.values.get({ spreadsheetId: sheetId, range });
+    const rows = response.data.values;
+
     if (!rows || rows.length === 0) {
-      return res.status(404).json({ error: "Không có dữ liệu" });
+      return res.status(404).json({ message: "Không tìm thấy dữ liệu" });
     }
 
-    // 🔥 Bỏ hàng tiêu đề
-    const data = rows.slice(1);
+    // 🏷 Lấy keywords từ người dùng (site hoặc mã)
+    const { keyword } = req.query;
+    if (!keyword) return res.status(400).json({ message: "Thiếu từ khóa tìm kiếm" });
 
-    // 🔥 Dọn dữ liệu trong sheet (cột Site và cột Mã)
-    const clean = (str) =>
-      (str || "")
-        .toLowerCase()
-        .replace(/^https?:\/\//, "")
-        .replace(/^www\./, "")
-        .trim();
+    const keywords = keyword
+      .split(/[\n,\s]+/) // hỗ trợ ngăn cách bằng xuống dòng, dấu phẩy, hoặc khoảng trắng
+      .map((k) => k.trim().toLowerCase())
+      .filter((k) => k);
 
-    // 🔥 Lọc site hoặc mã
-    const results = data.filter((row) => {
-      const site = clean(row[4]);   // cột Site
-      const code = clean(row[16]);  // cột Mã
-      return site.includes(cleanInput) || code.includes(cleanInput);
+    // 🔍 Tìm theo Site hoặc Mã
+    const matchedRows = rows.filter((row) => {
+      const site = (row[4] || "").toLowerCase();
+      const code = (row[16] || "").toLowerCase();
+      return keywords.some((k) => site.includes(k) || code.includes(k));
     });
 
-    if (results.length === 0) {
-      return res.status(404).json({ error: "Không tìm thấy" });
+    if (matchedRows.length === 0) {
+      return res.status(200).json({ message: "Không tìm thấy" });
     }
 
-    return res.status(200).json({ results });
-
-  } catch (err) {
-    console.error("🔥 Lỗi server:", err);
-    return res.status(500).json({ error: "Lỗi server" });
+    res.status(200).json({ results: matchedRows });
+  } catch (error) {
+    console.error("Lỗi Google Sheets API:", error);
+    res.status(500).json({ message: "Lỗi server", error: error.message });
   }
 }
