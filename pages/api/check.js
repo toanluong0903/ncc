@@ -1,63 +1,63 @@
-import { google } from "googleapis";
+// pages/api/check.js
+import { google } from 'googleapis';
 
 export default async function handler(req, res) {
-  try {
-    const { keyword } = req.query;
-    if (!keyword) return res.status(400).json({ message: "Thiếu từ khóa tìm kiếm" });
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
 
-    // 🟢 Kết nối Google API
+  try {
+    const { search, mode } = req.body; // mode = GP | TEXT | HOME
+
+    if (!search) return res.status(400).json({ error: 'Thiếu từ khóa tìm kiếm' });
+
+    // Google Auth
     const auth = new google.auth.GoogleAuth({
       credentials: JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT),
-      scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"],
+      scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
     });
-    const sheets = google.sheets({ version: "v4", auth });
+    const sheets = google.sheets({ version: 'v4', auth });
 
-    const spreadsheetId = process.env.SHEET_ID;
+    // 🔹 Lấy dữ liệu GP (toàn bộ bảng)
+    const gpSheet = await sheets.spreadsheets.values.get({
+      spreadsheetId: process.env.SHEET_ID,
+      range: `GP!A1:Q1000`,
+    });
 
-    // 🟢 Lấy dữ liệu từ 3 sheet cùng lúc
-    const [gpSheet, textSheet, homeSheet] = await Promise.all([
-      sheets.spreadsheets.values.get({ spreadsheetId, range: "GP!A1:Q" }),
-      sheets.spreadsheets.values.get({ spreadsheetId, range: "TEXT!A1:Q" }),
-      sheets.spreadsheets.values.get({ spreadsheetId, range: "HOME!A1:Q" }),
-    ]);
+    let rows = gpSheet.data.values || [];
 
-    const gpRows = gpSheet.data.values || [];
-    const textRows = textSheet.data.values || [];
-    const homeRows = homeSheet.data.values || [];
+    // Bỏ header
+    const header = rows[0];
+    rows = rows.slice(1);
 
-    if (gpRows.length === 0) {
-      return res.status(404).json({ message: "Sheet GP không có dữ liệu" });
+    // 🔍 Lọc site hoặc mã (cột E hoặc Q)
+    let result = rows.filter(row =>
+      (row[4] && row[4].toLowerCase().includes(search.toLowerCase())) ||
+      (row[16] && row[16].toLowerCase().includes(search.toLowerCase()))
+    );
+
+    // 🔹 Nếu user chọn TEXT hoặc HOME => ghi đè 2 cột Giá Bán & Giá Mua
+    if (mode !== 'GP') {
+      const priceSheet = await sheets.spreadsheets.values.get({
+        spreadsheetId: process.env.SHEET_ID,
+        range: `${mode}!J2:K1000`, // chỉ lấy 2 cột từ dòng 2 (bỏ header)
+      });
+
+      const priceRows = priceSheet.data.values || [];
+
+      // Ghi đè Giá Bán (cột 10) và Giá Mua (cột 11)
+      result = result.map((row, index) => {
+        if (priceRows[index]) {
+          row[9] = priceRows[index][0] || row[9];
+          row[10] = priceRows[index][1] || row[10];
+        }
+        return row;
+      });
     }
 
-    // 🟢 Chuẩn bị dữ liệu header + body
-    const header = gpRows[0];
-    const gpData = gpRows.slice(1);
-    const textData = textRows.slice(1);
-    const homeData = homeRows.slice(1);
-
-    // 🟢 Xử lý input (tách nhiều site/mã)
-    const keywords = keyword.split(/[\n,\s]+/).map(k => k.trim().toLowerCase()).filter(k => k);
-
-    // 🟢 Lọc dữ liệu trong GP
-    const results = gpData.filter(row => {
-      const site = (row[4] || "").toLowerCase();
-      const code = (row[16] || "").toLowerCase();
-      return keywords.some(k => site.includes(k) || code.includes(k));
-    });
-
-    if (results.length === 0) {
-      return res.status(200).json({ message: "Không tìm thấy" });
-    }
-
-    // 🟢 Trả về cả 3 sheet để FE xử lý
-    res.status(200).json({
-      header,
-      results,
-      textData,
-      homeData,
-    });
-  } catch (error) {
-    console.error("🔥 Lỗi Google Sheets API:", error);
-    res.status(500).json({ message: "Lỗi server", error: error.message });
+    return res.status(200).json({ header, result });
+  } catch (err) {
+    console.error('❌ Lỗi API:', err);
+    return res.status(500).json({ error: 'Lỗi server', details: err.message });
   }
 }

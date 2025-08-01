@@ -1,136 +1,100 @@
-import { useState } from "react";
+// pages/index.js
+import { useState } from 'react';
 
 export default function Home() {
-  const [input, setInput] = useState("");
+  const [search, setSearch] = useState('');
+  const [mode, setMode] = useState('GP');
   const [data, setData] = useState([]);
   const [header, setHeader] = useState([]);
-  const [textData, setTextData] = useState([]);
-  const [homeData, setHomeData] = useState([]);
-  const [activeSheet, setActiveSheet] = useState("GP");
-  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
   const handleSearch = async () => {
-    setError("");
-    setData([]);
+    if (!search) {
+      setError('Vui lòng nhập từ khóa tìm kiếm');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
     try {
-      const res = await fetch(`/api/check?keyword=${encodeURIComponent(input)}`);
+      const res = await fetch('/api/check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ search, mode }),
+      });
       const json = await res.json();
-      if (json.results) {
+      if (res.ok) {
         setHeader(json.header);
-        setData(json.results);
-        setTextData(json.textData);
-        setHomeData(json.homeData);
+        setData(json.result);
       } else {
-        setError(json.message || "Không tìm thấy");
+        setError(json.error || 'Có lỗi xảy ra');
       }
     } catch (err) {
-      setError("Lỗi server");
+      setError('Lỗi kết nối server');
+    } finally {
+      setLoading(false);
     }
-  };
-
-  // 🟢 Hàm lấy giá từ TEXT hoặc HOME nếu activeSheet thay đổi
-  const getPriceFromOtherSheet = (site, sheet) => {
-    const source = sheet === "TEXT" ? textData : homeData;
-    const match = source.find(row => row[4] === site);
-    if (match) {
-      return { giaBan: match[9] || "", giaMua: match[10] || "" };
-    }
-    return null;
   };
 
   return (
-    <div style={{ padding: "20px", fontFamily: "Arial", backgroundColor: "#fafafa", minHeight: "100vh" }}>
+    <div style={{ padding: '20px', fontFamily: 'sans-serif' }}>
       <h2>Tool Check Site (Demo)</h2>
 
-      {/* Ô nhập */}
+      {/* Input Search */}
       <textarea
+        placeholder="Nhập site hoặc mã (có thể nhập nhiều dòng)"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
         rows={3}
-        style={{ width: "450px", padding: "8px", borderRadius: "5px", border: "1px solid #ccc" }}
-        placeholder="Nhập site hoặc mã (nhiều giá trị cách nhau bằng dấu phẩy hoặc xuống dòng)"
-        value={input}
-        onChange={(e) => setInput(e.target.value)}
+        style={{ width: '400px', padding: '8px', fontSize: '16px' }}
       />
       <br />
-      <button
-        onClick={handleSearch}
-        style={{
-          marginTop: "10px",
-          padding: "10px 22px",
-          backgroundColor: "#2E8B57",
-          color: "#fff",
-          border: "none",
-          borderRadius: "5px",
-          fontWeight: "bold",
-          cursor: "pointer",
-        }}
-      >
+      <button onClick={handleSearch} style={{ marginTop: '10px', padding: '10px 20px', background: 'green', color: 'white', fontWeight: 'bold' }}>
         🔍 Tìm kiếm
       </button>
 
-      {error && <p style={{ color: "red", marginTop: "10px" }}>{error}</p>}
+      {/* Tabs */}
+      <div style={{ marginTop: '20px' }}>
+        {['GP', 'TEXT', 'HOME'].map((tab) => (
+          <button
+            key={tab}
+            onClick={() => setMode(tab)}
+            style={{
+              marginRight: '10px',
+              padding: '8px 16px',
+              background: mode === tab ? 'black' : '#ccc',
+              color: mode === tab ? 'white' : 'black',
+              fontWeight: 'bold',
+            }}
+          >
+            {tab}
+          </button>
+        ))}
+      </div>
 
-      {/* Nút chuyển sheet */}
-      {data.length > 0 && (
-        <div style={{ marginTop: "20px" }}>
-          <button onClick={() => setActiveSheet("GP")} style={{ marginRight: "10px" }}>GP</button>
-          <button onClick={() => setActiveSheet("TEXT")} style={{ marginRight: "10px" }}>TEXT</button>
-          <button onClick={() => setActiveSheet("HOME")}>HOME</button>
-        </div>
-      )}
+      {/* Loading/Error */}
+      {loading && <p>⏳ Đang tìm kiếm...</p>}
+      {error && <p style={{ color: 'red' }}>{error}</p>}
 
-      {/* Hiển thị kết quả */}
+      {/* Table */}
       {data.length > 0 && (
-        <table
-          style={{
-            marginTop: "20px",
-            borderCollapse: "collapse",
-            width: "100%",
-            backgroundColor: "#fff",
-            boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
-          }}
-        >
+        <table border="1" cellPadding="5" style={{ marginTop: '20px', borderCollapse: 'collapse', width: '100%' }}>
           <thead>
             <tr>
               {header.map((h, i) => (
-                <th
-                  key={i}
-                  style={{
-                    padding: "10px",
-                    backgroundColor: "#f0f0f0",
-                    borderBottom: "2px solid #ddd",
-                    fontWeight: "bold",
-                    textAlign: "center",
-                  }}
-                >
-                  {h}
-                </th>
+                <th key={i}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {data.map((row, idx) => {
-              const site = row[4];
-              let rowCopy = [...row];
-
-              // 🟢 Nếu chuyển sang TEXT hoặc HOME -> chỉ thay Giá Bán (cột 9) & Giá Mua (cột 10)
-              if (activeSheet !== "GP") {
-                const newPrice = getPriceFromOtherSheet(site, activeSheet);
-                if (newPrice) {
-                  rowCopy[9] = newPrice.giaBan;
-                  rowCopy[10] = newPrice.giaMua;
-                }
-              }
-
-              return (
-                <tr key={idx} style={{ borderBottom: "1px solid #eee" }}>
-                  {rowCopy.map((cell, i) => (
-                    <td key={i} style={{ padding: "8px", textAlign: "center" }}>
-                      {cell}
-                    </td>
-                  ))}
-                </tr>
-              );
-            })}
+            {data.map((row, idx) => (
+              <tr key={idx}>
+                {row.map((cell, cidx) => (
+                  <td key={cidx}>{cell}</td>
+                ))}
+              </tr>
+            ))}
           </tbody>
         </table>
       )}
