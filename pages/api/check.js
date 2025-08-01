@@ -8,7 +8,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    // ✅ Load service account từ biến môi trường
+    // ✅ Auth service account (dùng file JSON đã add vào Vercel ENV)
     const auth = new google.auth.GoogleAuth({
       credentials: JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT),
       scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"],
@@ -16,10 +16,10 @@ export default async function handler(req, res) {
 
     const sheets = google.sheets({ version: "v4", auth });
 
-    // ✅ Lấy dữ liệu từ Google Sheet
+    // ✅ Lấy dữ liệu Google Sheet
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: process.env.SHEET_ID,
-      range: "A1:Q10000", // lấy hết dữ liệu (có thể tăng nếu sheet lớn)
+      range: "A1:Q10000", // range rộng để lấy hết
     });
 
     const rows = response.data.values;
@@ -27,38 +27,31 @@ export default async function handler(req, res) {
       return res.status(404).json({ message: "Không có dữ liệu" });
     }
 
-    // ✅ Lấy header (hàng đầu tiên)
-    const headers = rows[0];
+    const headers = rows[0]; // hàng tiêu đề
     const dataRows = rows.slice(1);
 
-    // ✅ Tìm theo “Site” hoặc “Mã”
-    const bySite = dataRows.find((r) => r[4] && r[4].toLowerCase() === site.toLowerCase());
-    const byMa = dataRows.filter((r) => r[16] && r[16].toLowerCase() === site.toLowerCase());
+    // ✅ Tìm theo site hoặc mã
+    const foundBySite = dataRows.find((r) => r[4] && r[4].toLowerCase() === site.toLowerCase());
+    const foundByMa = dataRows.filter((r) => r[16] && r[16].toLowerCase() === site.toLowerCase());
 
-    if (bySite) {
-      // Nếu tìm thấy site -> trả về 1 object
+    if (foundBySite) {
+      // ✅ Nếu tìm thấy site -> trả về 1 dòng
       const obj = {};
-      headers.forEach((h, idx) => {
-        obj[h] = bySite[idx] || "";
-      });
-
+      headers.forEach((h, i) => obj[h] = foundBySite[i] || "");
       return res.status(200).json({ type: "site", data: obj });
-    } else if (byMa.length > 0) {
-      // Nếu tìm thấy mã -> trả về nhiều dòng
-      const arr = byMa.map((row) => {
+    } else if (foundByMa.length > 0) {
+      // ✅ Nếu tìm theo mã -> trả về tất cả dòng khớp
+      const list = foundByMa.map((row) => {
         const obj = {};
-        headers.forEach((h, idx) => {
-          obj[h] = row[idx] || "";
-        });
+        headers.forEach((h, i) => obj[h] = row[i] || "");
         return obj;
       });
-
-      return res.status(200).json({ type: "ma", headers, data: arr });
+      return res.status(200).json({ type: "ma", data: list });
     } else {
       return res.status(404).json({ message: "Không tìm thấy site hoặc mã" });
     }
   } catch (err) {
-    console.error(err);
+    console.error("Lỗi Google Sheets:", err);
     return res.status(500).json({ message: "Lỗi server", error: err.message });
   }
 }
