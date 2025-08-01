@@ -1,102 +1,159 @@
-// pages/index.js
 import { useState } from 'react';
 
 export default function Home() {
-  const [search, setSearch] = useState('');
-  const [mode, setMode] = useState('GP');
-  const [data, setData] = useState([]);
-  const [header, setHeader] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState([]);
+  const [activeSheet, setActiveSheet] = useState('GP'); // Sheet mặc định
+  const [expandedNote, setExpandedNote] = useState(null); // 🆕 state cho ghi chú dài
 
   const handleSearch = async () => {
-    if (!search) {
-      setError('Vui lòng nhập từ khóa tìm kiếm');
-      return;
-    }
+    if (!query.trim()) return;
 
-    setLoading(true);
-    setError('');
     try {
-      const res = await fetch('/api/check', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ search, mode }),
-      });
-      const json = await res.json();
-      if (res.ok) {
-        setHeader(json.header);
-        setData(json.result);
+      const response = await fetch(`/api/check?query=${encodeURIComponent(query)}&sheet=${activeSheet}`);
+      const data = await response.json();
+      if (data.error) {
+        setResults([]);
+        alert(data.error);
       } else {
-        setError(json.error || 'Có lỗi xảy ra');
+        setResults(data);
       }
     } catch (err) {
-      setError('Lỗi kết nối server');
-    } finally {
-      setLoading(false);
+      console.error(err);
+      alert('Lỗi khi tìm kiếm');
     }
   };
 
   return (
-    <div style={{ padding: '20px', fontFamily: 'sans-serif' }}>
+    <div style={{ padding: '20px', fontFamily: 'Arial' }}>
       <h2>Tool Check Site (Demo)</h2>
 
-      {/* Input Search */}
+      {/* Ô nhập query */}
       <textarea
-        placeholder="Nhập site hoặc mã (có thể nhập nhiều dòng)"
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        rows={3}
-        style={{ width: '400px', padding: '8px', fontSize: '16px' }}
-      />
-      <br />
-      <button onClick={handleSearch} style={{ marginTop: '10px', padding: '10px 20px', background: 'green', color: 'white', fontWeight: 'bold' }}>
+        rows="4"
+        style={{ width: '100%', marginBottom: '10px' }}
+        placeholder="Nhập site hoặc mã (mỗi dòng một giá trị)"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+      ></textarea>
+
+      {/* Nút tìm kiếm */}
+      <button
+        onClick={handleSearch}
+        style={{ background: 'green', color: 'white', padding: '10px 20px', border: 'none', cursor: 'pointer' }}
+      >
         🔍 Tìm kiếm
       </button>
 
-      {/* Tabs */}
-      <div style={{ marginTop: '20px' }}>
-        {['GP', 'TEXT', 'HOME'].map((tab) => (
+      {/* Tab chuyển sheet */}
+      <div style={{ marginTop: '10px' }}>
+        {['GP', 'TEXT', 'HOME'].map((sheet) => (
           <button
-            key={tab}
-            onClick={() => setMode(tab)}
+            key={sheet}
+            onClick={() => setActiveSheet(sheet)}
             style={{
               marginRight: '10px',
-              padding: '8px 16px',
-              background: mode === tab ? 'black' : '#ccc',
-              color: mode === tab ? 'white' : 'black',
-              fontWeight: 'bold',
+              padding: '6px 12px',
+              background: activeSheet === sheet ? '#333' : '#ccc',
+              color: 'white',
+              border: 'none',
+              cursor: 'pointer'
             }}
           >
-            {tab}
+            {sheet}
           </button>
         ))}
       </div>
 
-      {/* Loading/Error */}
-      {loading && <p>⏳ Đang tìm kiếm...</p>}
-      {error && <p style={{ color: 'red' }}>{error}</p>}
-
-      {/* Table */}
-      {data.length > 0 && (
-        <table border="1" cellPadding="5" style={{ marginTop: '20px', borderCollapse: 'collapse', width: '100%' }}>
-          <thead>
+      {/* Bảng kết quả */}
+      {results.length > 0 && (
+        <table
+          border="1"
+          cellPadding="5"
+          style={{ borderCollapse: 'collapse', width: '100%', marginTop: '20px', fontSize: '14px' }}
+        >
+          <thead style={{ background: '#f2f2f2' }}>
             <tr>
-              {header.map((h, i) => (
-                <th key={i}>{h}</th>
+              {[
+                'CS',
+                'Tình Trạng',
+                'Bóng',
+                'BET',
+                'Site',
+                'Chủ đề',
+                'DR',
+                'Traffic',
+                'Ghi Chú',
+                'Giá Bán',
+                'Giá Mua',
+                'HH',
+                'Giá Cuối',
+                'LN',
+                'Time',
+                'Tên',
+                'Mã'
+              ].map((col, idx) => (
+                <th key={idx}>{col}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {data.map((row, idx) => (
+            {results.map((row, idx) => (
               <tr key={idx}>
-                {row.map((cell, cidx) => (
-                  <td key={cidx}>{cell}</td>
-                ))}
+                {row.map((cell, cidx) => {
+                  // 🆕 Ẩn ghi chú dài hơn 30 ký tự
+                  if (cidx === 8 && cell && cell.length > 30) {
+                    return (
+                      <td
+                        key={cidx}
+                        style={{ cursor: 'pointer', color: 'blue' }}
+                        onClick={() => setExpandedNote(cell)}
+                        title="Click để xem đầy đủ"
+                      >
+                        {cell.slice(0, 30)}...
+                      </td>
+                    );
+                  }
+                  return <td key={cidx}>{cell}</td>;
+                })}
               </tr>
             ))}
           </tbody>
         </table>
+      )}
+
+      {/* 🆕 Popup hiện ghi chú đầy đủ */}
+      {expandedNote && (
+        <div
+          style={{
+            position: 'fixed',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            background: 'white',
+            padding: '20px',
+            boxShadow: '0px 0px 10px rgba(0,0,0,0.3)',
+            zIndex: 1000,
+            maxWidth: '600px'
+          }}
+        >
+          <h3>Ghi Chú</h3>
+          <p>{expandedNote}</p>
+          <button
+            onClick={() => setExpandedNote(null)}
+            style={{
+              marginTop: '10px',
+              padding: '8px 16px',
+              background: 'red',
+              color: 'white',
+              fontWeight: 'bold',
+              border: 'none',
+              cursor: 'pointer'
+            }}
+          >
+            Đóng
+          </button>
+        </div>
       )}
     </div>
   );
