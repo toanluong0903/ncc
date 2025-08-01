@@ -1,9 +1,15 @@
-// ✅ pages/api/check.js – Lấy dữ liệu từ Google Sheet (hỗ trợ tìm theo Site hoặc Mã)
+// ✅ pages/api/check.js – Lấy nhiều site/mã cùng lúc
 import { google } from "googleapis";
 
 export default async function handler(req, res) {
   const { query } = req;
   const input = (query.site || "").toLowerCase().trim();
+
+  // ✅ Tách input thành mảng (theo dấu phẩy, dấu cách, hoặc xuống dòng)
+  const searchList = input
+    .split(/[\s,]+/)
+    .map((s) => s.trim())
+    .filter((s) => s);
 
   try {
     // ✅ Kết nối Google Service Account
@@ -17,7 +23,7 @@ export default async function handler(req, res) {
     // ✅ Đọc dữ liệu từ Google Sheet
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: process.env.SHEET_ID,
-      range: "Sheet1!A2:Q", // ⚠️ Đổi tên sheet & range nếu cần
+      range: "Sheet1!A2:Q", // ⚠️ Đổi nếu sheet bạn khác tên
     });
 
     const rows = response.data.values;
@@ -26,17 +32,17 @@ export default async function handler(req, res) {
       return res.status(404).json({ message: "Không có dữ liệu" });
     }
 
-    // ✅ Filter theo Site (cột E – index 4) hoặc Mã (cột Q – index 16)
+    // ✅ Lọc: match nếu cột Site (E – index 4) hoặc Mã (Q – index 16) nằm trong danh sách tìm
     const results = rows.filter(
       (row) =>
-        row[4]?.toLowerCase() === input || row[16]?.toLowerCase() === input
+        searchList.includes(row[4]?.toLowerCase()) ||
+        searchList.includes(row[16]?.toLowerCase())
     );
 
     if (results.length === 0) {
-      return res.status(404).json({ message: "Không tìm thấy site/mã" });
+      return res.status(404).json({ message: "Không tìm thấy site/mã nào" });
     }
 
-    // ✅ Trả về toàn bộ kết quả dạng mảng
     return res.status(200).json({ results });
   } catch (error) {
     console.error("❌ Lỗi Google Sheets API:", error);
