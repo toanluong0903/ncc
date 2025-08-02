@@ -7,10 +7,10 @@ export default function Home() {
   const [textData, setTextData] = useState([]);
   const [homeData, setHomeData] = useState([]);
   const [activeSheet, setActiveSheet] = useState("GP");
-  const [error, setError] = useState("");
-  const [expandedNotes, setExpandedNotes] = useState(new Set());
+  const [error, setError] = useState([]);
+  const [expandedNotes, setExpandedNotes] = useState({});
 
-  // ✅ Hàm tìm kiếm
+  // ✅ Search function
   const handleSearch = async () => {
     setError("");
     setData([]);
@@ -40,45 +40,29 @@ export default function Home() {
     return null;
   };
 
-  // ✅ Toggle ghi chú dài
+  // ✅ Toggle ghi chú dài/ngắn
   const toggleNote = (rowIndex) => {
-    const newSet = new Set(expandedNotes);
-    if (newSet.has(rowIndex)) {
-      newSet.delete(rowIndex);
-    } else {
-      newSet.add(rowIndex);
-    }
-    setExpandedNotes(newSet);
+    setExpandedNotes((prev) => ({
+      ...prev,
+      [rowIndex]: !prev[rowIndex],
+    }));
   };
 
   return (
-    <div
-      style={{
-        padding: "20px",
-        fontFamily: "Arial",
-        backgroundColor: "#fafafa",
-        minHeight: "100vh",
-      }}
-    >
+    <div style={{ padding: "20px", fontFamily: "Arial", backgroundColor: "#fafafa", minHeight: "100vh" }}>
       <h2>Tool Check Site (Demo)</h2>
 
-      {/* ✅ Ô nhập */}
+      {/* Nhập site */}
       <textarea
         rows={3}
-        style={{
-          width: "450px",
-          padding: "8px",
-          borderRadius: "5px",
-          border: "1px solid #ccc",
-        }}
+        style={{ width: "450px", padding: "8px", borderRadius: "5px", border: "1px solid #ccc" }}
         placeholder="Nhập site hoặc mã (mỗi dòng 1 giá trị)"
         value={input}
         onChange={(e) => setInput(e.target.value)}
       />
-
       <br />
 
-      {/* ✅ Nút search */}
+      {/* Nút tìm kiếm */}
       <button
         onClick={handleSearch}
         style={{
@@ -97,19 +81,19 @@ export default function Home() {
 
       {error && <p style={{ color: "red", marginTop: "10px" }}>{error}</p>}
 
-      {/* ✅ 3 nút chọn sheet */}
+      {/* ✅ Nút chuyển sheet */}
       {data.length > 0 && (
         <div style={{ marginTop: "20px" }}>
           <button
             onClick={() => setActiveSheet("GP")}
             style={{
               marginRight: "10px",
-              padding: "6px 14px",
               backgroundColor: activeSheet === "GP" ? "#2E8B57" : "#ccc",
-              color: activeSheet === "GP" ? "white" : "black",
+              color: activeSheet === "GP" ? "#fff" : "#000",
               fontWeight: "bold",
+              padding: "6px 14px",
+              borderRadius: "5px",
               border: "none",
-              borderRadius: "4px",
               cursor: "pointer",
             }}
           >
@@ -119,12 +103,12 @@ export default function Home() {
             onClick={() => setActiveSheet("TEXT")}
             style={{
               marginRight: "10px",
-              padding: "6px 14px",
               backgroundColor: activeSheet === "TEXT" ? "#2E8B57" : "#ccc",
-              color: activeSheet === "TEXT" ? "white" : "black",
+              color: activeSheet === "TEXT" ? "#fff" : "#000",
               fontWeight: "bold",
+              padding: "6px 14px",
+              borderRadius: "5px",
               border: "none",
-              borderRadius: "4px",
               cursor: "pointer",
             }}
           >
@@ -133,12 +117,12 @@ export default function Home() {
           <button
             onClick={() => setActiveSheet("HOME")}
             style={{
-              padding: "6px 14px",
               backgroundColor: activeSheet === "HOME" ? "#2E8B57" : "#ccc",
-              color: activeSheet === "HOME" ? "white" : "black",
+              color: activeSheet === "HOME" ? "#fff" : "#000",
               fontWeight: "bold",
+              padding: "6px 14px",
+              borderRadius: "5px",
               border: "none",
-              borderRadius: "4px",
               cursor: "pointer",
             }}
           >
@@ -147,7 +131,7 @@ export default function Home() {
         </div>
       )}
 
-      {/* ✅ Bảng kết quả */}
+      {/* ✅ Hiển thị bảng kết quả */}
       {data.length > 0 && (
         <table
           style={{
@@ -176,12 +160,13 @@ export default function Home() {
               ))}
             </tr>
           </thead>
+
           <tbody>
             {data.map((row, rowIndex) => {
               const site = row[4];
               let rowCopy = [...row];
 
-              // ✅ Nếu đổi sang TEXT hoặc HOME -> chỉ thay Giá Bán (cột 9) & Giá Mua (cột 10)
+              // ✅ Nếu chuyển sang TEXT hoặc HOME thì thay giá
               if (activeSheet !== "GP") {
                 const newPrice = getPriceFromOtherSheet(site, activeSheet);
                 if (newPrice) {
@@ -193,14 +178,9 @@ export default function Home() {
               return (
                 <tr key={rowIndex} style={{ borderBottom: "1px solid #eee" }}>
                   {rowCopy.map((cell, colIndex) => {
-                    // ✅ Cột Ghi Chú có chức năng thu gọn
-                    if (header[colIndex] === "Ghi Chú" && cell) {
-                      const isExpanded = expandedNotes.has(rowIndex);
-                      const shortText =
-                        cell.length > 50
-                          ? cell.substring(0, 50) + "..."
-                          : cell;
-
+                    // ✅ Nếu là cột ghi chú -> ẩn bớt + [Xem thêm]
+                    if (header[colIndex] === "Ghi Chú" && typeof cell === "string" && cell.length > 40) {
+                      const isExpanded = expandedNotes[rowIndex];
                       return (
                         <td
                           key={colIndex}
@@ -208,28 +188,21 @@ export default function Home() {
                             padding: "8px",
                             textAlign: "left",
                             border: "1px solid #ddd",
+                            cursor: "default",
                             userSelect: "text",
-                            cursor: "text",
                           }}
                         >
-                          {isExpanded ? cell : shortText}
-                          {cell.length > 50 && (
-                            <span
-                              onClick={() => toggleNote(rowIndex)}
-                              style={{
-                                color: "blue",
-                                cursor: "pointer",
-                                marginLeft: "5px",
-                              }}
-                            >
-                              {isExpanded ? "Thu gọn" : "[Xem thêm]"}
-                            </span>
-                          )}
+                          {isExpanded ? cell : `${cell.substring(0, 40)}...`}{" "}
+                          <span
+                            style={{ color: "blue", cursor: "pointer" }}
+                            onClick={() => toggleNote(rowIndex)}
+                          >
+                            {isExpanded ? "[Ẩn bớt]" : "[Xem thêm]"}
+                          </span>
                         </td>
                       );
                     }
 
-                    // ✅ Các cột khác
                     return (
                       <td
                         key={colIndex}
@@ -237,8 +210,7 @@ export default function Home() {
                           padding: "8px",
                           textAlign: "center",
                           border: "1px solid #ddd",
-                          userSelect: "text",
-                          cursor: "text",
+                          userSelect: "text", // ✅ Cho phép copy bằng Ctrl + C
                         }}
                       >
                         {cell}
