@@ -71,6 +71,7 @@ export default function Home() {
     <div style={{ padding: "20px", fontFamily: "Arial", backgroundColor: "#fafafa", minHeight: "100vh" }}>
       <h2>Tool Check Site (Demo)</h2>
 
+      {/* Ô nhập liệu */}
       <textarea
         rows={3}
         style={{ width: "450px", padding: "8px", borderRadius: "5px", border: "1px solid #ccc" }}
@@ -80,7 +81,55 @@ export default function Home() {
       />
 
       <br />
-      {/* ✅ Nút search */}
+
+      {/* ✅ Luôn hiển thị 3 nút GP – TEXT – HOME */}
+      <div style={{ marginTop: "20px" }}>
+        <button
+          onClick={() => setActiveSheet("GP")}
+          style={{
+            marginRight: "10px",
+            backgroundColor: activeSheet === "GP" ? "#28a745" : "#ccc",
+            color: "#fff",
+            padding: "8px 16px",
+            border: "none",
+            borderRadius: "5px",
+            cursor: "pointer",
+          }}
+        >
+          GP
+        </button>
+
+        <button
+          onClick={() => setActiveSheet("TEXT")}
+          style={{
+            marginRight: "10px",
+            backgroundColor: activeSheet === "TEXT" ? "#28a745" : "#ccc",
+            color: "#fff",
+            padding: "8px 16px",
+            border: "none",
+            borderRadius: "5px",
+            cursor: "pointer",
+          }}
+        >
+          TEXT
+        </button>
+
+        <button
+          onClick={() => setActiveSheet("HOME")}
+          style={{
+            backgroundColor: activeSheet === "HOME" ? "#28a745" : "#ccc",
+            color: "#fff",
+            padding: "8px 16px",
+            border: "none",
+            borderRadius: "5px",
+            cursor: "pointer",
+          }}
+        >
+          HOME
+        </button>
+      </div>
+
+      {/* ✅ Nút tìm kiếm */}
       <button
         onClick={handleSearch}
         style={{
@@ -99,16 +148,7 @@ export default function Home() {
 
       {error && <p style={{ color: "red", marginTop: "10px" }}>{error}</p>}
 
-      {/* ✅ Nút chọn Sheet */}
-      {data.length > 0 && (
-        <div style={{ marginTop: "20px" }}>
-          <button onClick={() => setActiveSheet("GP")} style={{ marginRight: "10px" }}>GP</button>
-          <button onClick={() => setActiveSheet("TEXT")} style={{ marginRight: "10px" }}>TEXT</button>
-          <button onClick={() => setActiveSheet("HOME")}>HOME</button>
-        </div>
-      )}
-
-      {/* ✅ Copy các ô đã chọn */}
+      {/* ✅ Nút copy nhiều ô */}
       {selectedCells.size > 0 && (
         <div style={{ marginTop: "10px" }}>
           <button
@@ -127,7 +167,7 @@ export default function Home() {
         </div>
       )}
 
-      {/* ✅ Hiển thị bảng */}
+      {/* ✅ Hiển thị bảng kết quả */}
       {data.length > 0 && (
         <table
           style={{
@@ -161,7 +201,7 @@ export default function Home() {
               const site = row[4];
               let rowCopy = [...row];
 
-              // ✅ Nếu đổi sang TEXT hoặc HOME -> chỉ thay Giá Bán (cột 9) & Giá Mua (cột 10)
+              // ✅ Nếu đổi sang TEXT hoặc HOME -> thay Giá Bán (cột 9) & Giá Mua (cột 10)
               if (activeSheet !== "GP") {
                 const newPrice = getPriceFromOtherSheet(site, activeSheet);
                 if (newPrice) {
