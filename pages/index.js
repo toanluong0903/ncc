@@ -10,7 +10,7 @@ export default function Home() {
   const [error, setError] = useState("");
   const [selectedCells, setSelectedCells] = useState(new Set());
 
-  // ✅ Search từ API
+  // 🔍 SEARCH API
   const handleSearch = async () => {
     setError("");
     setData([]);
@@ -30,7 +30,7 @@ export default function Home() {
     }
   };
 
-  // ✅ Lấy giá bán/mua từ sheet TEXT hoặc HOME
+  // 📊 Lấy giá từ sheet khác
   const getPriceFromOtherSheet = (site, sheet) => {
     const source = sheet === "TEXT" ? textData : homeData;
     const match = source.find((row) => row[4] === site);
@@ -40,7 +40,7 @@ export default function Home() {
     return null;
   };
 
-  // ✅ Double click để copy 1 ô
+  // 📋 Double click copy 1 ô
   const handleDoubleClickCopy = (text) => {
     navigator.clipboard.writeText(text);
     alert(`✅ Đã copy: ${text}`);
@@ -50,6 +50,7 @@ export default function Home() {
   const handleCellClick = (rowIndex, colIndex) => {
     const cellId = `${rowIndex}-${colIndex}`;
     const newSelection = new Set(selectedCells);
+
     if (newSelection.has(cellId)) {
       newSelection.delete(cellId);
     } else {
@@ -58,38 +59,35 @@ export default function Home() {
     setSelectedCells(newSelection);
   };
 
-  // ✅ Copy tất cả ô đã chọn (copy theo dạng hàng ngang)
+  // 📋 Copy tất cả ô đã chọn (dạng 1 hàng ngang)
   const handleCopySelected = () => {
-    if (selectedCells.size === 0) return;
+    const rows = [];
+    let currentRow = -1;
+    let temp = [];
 
-    // Gom theo từng hàng (row)
-    const rowMap = {};
-    selectedCells.forEach((id) => {
-      const [row, col] = id.split("-").map(Number);
-      if (!rowMap[row]) rowMap[row] = [];
-      rowMap[row].push({ col, value: data[row][col] });
-    });
+    Array.from(selectedCells)
+      .map((id) => id.split("-").map(Number))
+      .sort((a, b) => (a[0] - b[0]) || (a[1] - b[1]))
+      .forEach(([row, col]) => {
+        if (row !== currentRow) {
+          if (temp.length > 0) rows.push(temp.join("\t"));
+          temp = [];
+          currentRow = row;
+        }
+        temp.push(data[row][col]);
+      });
 
-    // Sắp xếp theo thứ tự cột
-    const sortedRows = Object.keys(rowMap)
-      .sort((a, b) => a - b)
-      .map((row) =>
-        rowMap[row]
-          .sort((a, b) => a.col - b.col)
-          .map((cell) => cell.value)
-          .join("\t") // copy ngang (tab)
-      );
+    if (temp.length > 0) rows.push(temp.join("\t"));
 
-    const finalText = sortedRows.join("\n"); // mỗi hàng xuống dòng
-    navigator.clipboard.writeText(finalText);
-    alert(`✅ Đã copy ${selectedCells.size} ô (${sortedRows.length} hàng)!`);
+    navigator.clipboard.writeText(rows.join("\n"));
+    alert(`✅ Đã copy ${selectedCells.size} ô!`);
   };
 
   return (
     <div style={{ padding: "20px", fontFamily: "Arial", backgroundColor: "#fafafa", minHeight: "100vh" }}>
       <h2>Tool Check Site (Demo)</h2>
 
-      {/* Ô nhập liệu */}
+      {/* 📥 Ô nhập */}
       <textarea
         rows={3}
         style={{ width: "450px", padding: "8px", borderRadius: "5px", border: "1px solid #ccc" }}
@@ -99,7 +97,7 @@ export default function Home() {
       />
 
       <br />
-      {/* ✅ Nút search */}
+      {/* 🔍 Nút search */}
       <button
         onClick={handleSearch}
         style={{
@@ -118,7 +116,7 @@ export default function Home() {
 
       {error && <p style={{ color: "red", marginTop: "10px" }}>{error}</p>}
 
-      {/* ✅ 3 nút chọn Sheet (GP, TEXT, HOME) */}
+      {/* ✅ 3 NÚT CHỌN SHEET */}
       {data.length > 0 && (
         <div style={{ marginTop: "20px" }}>
           <button
@@ -128,9 +126,9 @@ export default function Home() {
               backgroundColor: activeSheet === "GP" ? "#28a745" : "#ccc",
               color: "#fff",
               padding: "8px 16px",
-              borderRadius: "5px",
               border: "none",
-              cursor: "pointer",
+              borderRadius: "5px",
+              cursor: "pointer"
             }}
           >
             GP
@@ -142,9 +140,9 @@ export default function Home() {
               backgroundColor: activeSheet === "TEXT" ? "#28a745" : "#ccc",
               color: "#fff",
               padding: "8px 16px",
-              borderRadius: "5px",
               border: "none",
-              cursor: "pointer",
+              borderRadius: "5px",
+              cursor: "pointer"
             }}
           >
             TEXT
@@ -155,9 +153,9 @@ export default function Home() {
               backgroundColor: activeSheet === "HOME" ? "#28a745" : "#ccc",
               color: "#fff",
               padding: "8px 16px",
-              borderRadius: "5px",
               border: "none",
-              cursor: "pointer",
+              borderRadius: "5px",
+              cursor: "pointer"
             }}
           >
             HOME
@@ -165,7 +163,7 @@ export default function Home() {
         </div>
       )}
 
-      {/* ✅ Copy các ô đã chọn */}
+      {/* ✅ Nút Copy */}
       {selectedCells.size > 0 && (
         <div style={{ marginTop: "10px" }}>
           <button
@@ -184,7 +182,7 @@ export default function Home() {
         </div>
       )}
 
-      {/* ✅ Hiển thị bảng kết quả */}
+      {/* 📊 Bảng dữ liệu */}
       {data.length > 0 && (
         <table
           style={{
@@ -218,7 +216,7 @@ export default function Home() {
               const site = row[4];
               let rowCopy = [...row];
 
-              // ✅ Nếu đổi sang TEXT hoặc HOME -> chỉ thay Giá Bán & Giá Mua
+              // 🔄 Update giá khi chọn TEXT hoặc HOME
               if (activeSheet !== "GP") {
                 const newPrice = getPriceFromOtherSheet(site, activeSheet);
                 if (newPrice) {
@@ -232,6 +230,7 @@ export default function Home() {
                   {rowCopy.map((cell, colIndex) => {
                     const cellId = `${rowIndex}-${colIndex}`;
                     const isSelected = selectedCells.has(cellId);
+
                     return (
                       <td
                         key={colIndex}
@@ -243,7 +242,6 @@ export default function Home() {
                           cursor: "pointer",
                           backgroundColor: isSelected ? "#cce5ff" : "transparent",
                           border: "1px solid #ddd",
-                          userSelect: "text", // ✅ vẫn Ctrl+C thủ công được
                         }}
                       >
                         {cell}
