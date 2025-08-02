@@ -2,14 +2,10 @@ import { google } from "googleapis";
 
 export default async function handler(req, res) {
   try {
-    // ✅ Lấy keyword (site hoặc mã) và sheet name từ query
-    const { keyword, sheet } = req.query;
+    const { keyword } = req.query;
     if (!keyword) {
       return res.status(400).json({ message: "Thiếu từ khóa tìm kiếm" });
     }
-
-    // ✅ Nếu không có sheet thì mặc định dùng GP
-    const sheetName = sheet || "GP";
 
     // ✅ Kết nối Google Sheets
     const auth = new google.auth.GoogleAuth({
@@ -20,31 +16,32 @@ export default async function handler(req, res) {
     const sheets = google.sheets({ version: "v4", auth });
     const spreadsheetId = process.env.SHEET_ID;
 
-    // ✅ Lấy dữ liệu từ sheet tương ứng
-    const range = `${sheetName}!A:Q`; // A:Q để bao hết cột
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId,
-      range,
-    });
+    // ✅ Load cả 3 sheet GP, TEXT, HOME
+    const sheetNames = ["GP", "TEXT", "HOME"];
+    const allData = {};
 
-    const rows = response.data.values;
-
-    if (!rows || rows.length === 0) {
-      return res.status(404).json({ message: "Không có dữ liệu" });
+    for (const name of sheetNames) {
+      const response = await sheets.spreadsheets.values.get({
+        spreadsheetId,
+        range: `${name}!A:Q`, // Lấy hết từ cột A đến Q
+      });
+      allData[name] = response.data.values || [];
     }
 
-    // ✅ Dòng đầu tiên là header
-    const header = rows[0];
-    const data = rows.slice(1);
+    // ✅ Lấy header từ sheet GP
+    const header = allData["GP"][0];
+    const gpRows = allData["GP"].slice(1);
+    const textRows = allData["TEXT"].slice(1);
+    const homeRows = allData["HOME"].slice(1);
 
-    // ✅ Chuẩn hóa input (có thể nhập nhiều giá trị)
+    // ✅ Chuẩn hóa input (nhiều giá trị)
     const keywords = keyword
       .split(/\n|,/)
       .map((k) => k.trim().toLowerCase())
       .filter((k) => k);
 
-    // ✅ Lọc dữ liệu theo site (cột 5) hoặc mã (cột 17)
-    const results = data.filter((row) => {
+    // ✅ Lọc dữ liệu theo site (cột 5) hoặc mã (cột 17) trong sheet GP
+    const results = gpRows.filter((row) => {
       const site = row[4]?.toLowerCase() || "";
       const code = row[16]?.toLowerCase() || "";
       return keywords.some((kw) => site === kw || code === kw);
@@ -57,6 +54,8 @@ export default async function handler(req, res) {
     return res.status(200).json({
       header,
       results,
+      textData: textRows,
+      homeData: homeRows,
     });
   } catch (error) {
     console.error("API Error:", error);
