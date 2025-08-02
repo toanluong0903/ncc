@@ -8,6 +8,8 @@ export default function Home() {
   const [homeData, setHomeData] = useState([]);
   const [activeSheet, setActiveSheet] = useState("GP");
   const [error, setError] = useState("");
+  const [selectedCells, setSelectedCells] = useState(new Set());
+  const [lastClicked, setLastClicked] = useState(null);
 
   // ✅ Tìm kiếm site
   const handleSearch = async () => {
@@ -37,6 +39,41 @@ export default function Home() {
       return { giaBan: match[9] || "", giaMua: match[10] || "" };
     }
     return null;
+  };
+
+  // ✅ Xử lý click chọn ô (Ctrl + click chọn nhiều, Shift + click chọn vùng)
+  const handleCellClick = (rowIndex, colIndex, event) => {
+    const cellId = `${rowIndex}-${colIndex}`;
+    const newSelection = new Set(selectedCells);
+
+    if (event.shiftKey && lastClicked) {
+      // Chọn vùng (Shift)
+      const [lastRow, lastCol] = lastClicked.split("-").map(Number);
+      const rowStart = Math.min(lastRow, rowIndex);
+      const rowEnd = Math.max(lastRow, rowIndex);
+      const colStart = Math.min(lastCol, colIndex);
+      const colEnd = Math.max(lastCol, colIndex);
+
+      for (let r = rowStart; r <= rowEnd; r++) {
+        for (let c = colStart; c <= colEnd; c++) {
+          newSelection.add(`${r}-${c}`);
+        }
+      }
+    } else if (event.ctrlKey || event.metaKey) {
+      // Chọn thêm (Ctrl)
+      if (newSelection.has(cellId)) {
+        newSelection.delete(cellId);
+      } else {
+        newSelection.add(cellId);
+      }
+      setLastClicked(cellId);
+    } else {
+      // Click thường (chỉ chọn 1 ô)
+      newSelection.clear();
+      newSelection.add(cellId);
+      setLastClicked(cellId);
+    }
+    setSelectedCells(newSelection);
   };
 
   return (
@@ -88,47 +125,23 @@ export default function Home() {
       {/* ✅ Nút chọn sheet GP/TEXT/HOME */}
       {data.length > 0 && (
         <div style={{ marginTop: "20px" }}>
-          <button
-            onClick={() => setActiveSheet("GP")}
-            style={{
-              marginRight: "10px",
-              backgroundColor: activeSheet === "GP" ? "#2E8B57" : "#ddd",
-              color: activeSheet === "GP" ? "#fff" : "#000",
-              border: "none",
-              padding: "8px 14px",
-              borderRadius: "5px",
-              cursor: "pointer",
-            }}
-          >
-            GP
-          </button>
-          <button
-            onClick={() => setActiveSheet("TEXT")}
-            style={{
-              marginRight: "10px",
-              backgroundColor: activeSheet === "TEXT" ? "#2E8B57" : "#ddd",
-              color: activeSheet === "TEXT" ? "#fff" : "#000",
-              border: "none",
-              padding: "8px 14px",
-              borderRadius: "5px",
-              cursor: "pointer",
-            }}
-          >
-            TEXT
-          </button>
-          <button
-            onClick={() => setActiveSheet("HOME")}
-            style={{
-              backgroundColor: activeSheet === "HOME" ? "#2E8B57" : "#ddd",
-              color: activeSheet === "HOME" ? "#fff" : "#000",
-              border: "none",
-              padding: "8px 14px",
-              borderRadius: "5px",
-              cursor: "pointer",
-            }}
-          >
-            HOME
-          </button>
+          {["GP", "TEXT", "HOME"].map((sheet) => (
+            <button
+              key={sheet}
+              onClick={() => setActiveSheet(sheet)}
+              style={{
+                marginRight: "10px",
+                backgroundColor: activeSheet === sheet ? "#2E8B57" : "#ddd",
+                color: activeSheet === sheet ? "#fff" : "#000",
+                border: "none",
+                padding: "8px 14px",
+                borderRadius: "5px",
+                cursor: "pointer",
+              }}
+            >
+              {sheet}
+            </button>
+          ))}
         </div>
       )}
 
@@ -141,7 +154,7 @@ export default function Home() {
             width: "100%",
             backgroundColor: "#fff",
             boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
-            userSelect: "text", // 👉 Cho phép Ctrl/Shift + select
+            userSelect: "none", // 👉 Ngăn bôi đen chữ default
           }}
         >
           <thead>
@@ -178,24 +191,31 @@ export default function Home() {
 
               return (
                 <tr key={rowIndex} style={{ borderBottom: "1px solid #eee" }}>
-                  {rowCopy.map((cell, colIndex) => (
-                    <td
-                      key={colIndex}
-                      style={{
-                        padding: "8px",
-                        textAlign: "center",
-                        cursor: "text", // 👉 Chỉ copy khi Ctrl+C
-                        border: "1px solid #ddd",
-                        maxWidth: "250px",
-                        whiteSpace: "nowrap",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                      }}
-                      title={cell} // 👉 Hover hiện full text
-                    >
-                      {cell}
-                    </td>
-                  ))}
+                  {rowCopy.map((cell, colIndex) => {
+                    const cellId = `${rowIndex}-${colIndex}`;
+                    const isSelected = selectedCells.has(cellId);
+
+                    return (
+                      <td
+                        key={colIndex}
+                        onClick={(e) => handleCellClick(rowIndex, colIndex, e)}
+                        style={{
+                          padding: "8px",
+                          textAlign: "center",
+                          cursor: "pointer",
+                          border: "1px solid #ddd",
+                          maxWidth: "250px",
+                          whiteSpace: "nowrap",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          backgroundColor: isSelected ? "#cce5ff" : "transparent",
+                        }}
+                        title={cell} // 👉 Hover hiện full text
+                      >
+                        {cell}
+                      </td>
+                    );
+                  })}
                 </tr>
               );
             })}
