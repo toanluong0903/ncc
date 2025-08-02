@@ -9,6 +9,7 @@ export default function Home() {
   const [activeSheet, setActiveSheet] = useState("GP");
   const [error, setError] = useState("");
 
+  // ✅ Tìm kiếm site
   const handleSearch = async () => {
     setError("");
     setData([]);
@@ -28,7 +29,7 @@ export default function Home() {
     }
   };
 
-  // ✅ Lấy giá từ sheet khác nếu đổi TEXT/HOME
+  // ✅ Lấy giá từ sheet TEXT/HOME nếu người dùng chuyển
   const getPriceFromOtherSheet = (site, sheet) => {
     const source = sheet === "TEXT" ? textData : homeData;
     const match = source.find((row) => row[4] === site);
@@ -38,36 +39,34 @@ export default function Home() {
     return null;
   };
 
-  // ✅ Double click để copy nhanh 1 ô
-  const handleDoubleClickCopy = (text) => {
-    navigator.clipboard.writeText(text);
-    alert(`✅ Đã copy: ${text}`);
-  };
-
-  // ✅ Toggle “xem thêm” ghi chú
-  const [expandedRows, setExpandedRows] = useState({});
-  const toggleExpand = (rowIndex) => {
-    setExpandedRows((prev) => ({
-      ...prev,
-      [rowIndex]: !prev[rowIndex],
-    }));
-  };
-
   return (
-    <div style={{ padding: "20px", fontFamily: "Arial", backgroundColor: "#fafafa", minHeight: "100vh" }}>
+    <div
+      style={{
+        padding: "20px",
+        fontFamily: "Arial",
+        backgroundColor: "#fafafa",
+        minHeight: "100vh",
+      }}
+    >
       <h2>Tool Check Site (Demo)</h2>
 
-      {/* ✅ Nhập site */}
+      {/* ✅ Ô nhập site */}
       <textarea
         rows={3}
-        style={{ width: "450px", padding: "8px", borderRadius: "5px", border: "1px solid #ccc" }}
+        style={{
+          width: "450px",
+          padding: "8px",
+          borderRadius: "5px",
+          border: "1px solid #ccc",
+        }}
         placeholder="Nhập site hoặc mã (mỗi dòng 1 giá trị)"
         value={input}
         onChange={(e) => setInput(e.target.value)}
       />
 
       <br />
-      {/* ✅ Nút search */}
+
+      {/* ✅ Nút tìm kiếm */}
       <button
         onClick={handleSearch}
         style={{
@@ -86,19 +85,18 @@ export default function Home() {
 
       {error && <p style={{ color: "red", marginTop: "10px" }}>{error}</p>}
 
-      {/* ✅ Nút chọn Sheet */}
+      {/* ✅ Nút chọn sheet GP/TEXT/HOME */}
       {data.length > 0 && (
         <div style={{ marginTop: "20px" }}>
           <button
             onClick={() => setActiveSheet("GP")}
             style={{
               marginRight: "10px",
-              padding: "6px 16px",
-              fontWeight: activeSheet === "GP" ? "bold" : "normal",
-              background: activeSheet === "GP" ? "#2E8B57" : "#f0f0f0",
-              color: activeSheet === "GP" ? "white" : "black",
-              borderRadius: "4px",
+              backgroundColor: activeSheet === "GP" ? "#2E8B57" : "#ddd",
+              color: activeSheet === "GP" ? "#fff" : "#000",
               border: "none",
+              padding: "8px 14px",
+              borderRadius: "5px",
               cursor: "pointer",
             }}
           >
@@ -108,12 +106,11 @@ export default function Home() {
             onClick={() => setActiveSheet("TEXT")}
             style={{
               marginRight: "10px",
-              padding: "6px 16px",
-              fontWeight: activeSheet === "TEXT" ? "bold" : "normal",
-              background: activeSheet === "TEXT" ? "#2E8B57" : "#f0f0f0",
-              color: activeSheet === "TEXT" ? "white" : "black",
-              borderRadius: "4px",
+              backgroundColor: activeSheet === "TEXT" ? "#2E8B57" : "#ddd",
+              color: activeSheet === "TEXT" ? "#fff" : "#000",
               border: "none",
+              padding: "8px 14px",
+              borderRadius: "5px",
               cursor: "pointer",
             }}
           >
@@ -122,12 +119,11 @@ export default function Home() {
           <button
             onClick={() => setActiveSheet("HOME")}
             style={{
-              padding: "6px 16px",
-              fontWeight: activeSheet === "HOME" ? "bold" : "normal",
-              background: activeSheet === "HOME" ? "#2E8B57" : "#f0f0f0",
-              color: activeSheet === "HOME" ? "white" : "black",
-              borderRadius: "4px",
+              backgroundColor: activeSheet === "HOME" ? "#2E8B57" : "#ddd",
+              color: activeSheet === "HOME" ? "#fff" : "#000",
               border: "none",
+              padding: "8px 14px",
+              borderRadius: "5px",
               cursor: "pointer",
             }}
           >
@@ -136,7 +132,7 @@ export default function Home() {
         </div>
       )}
 
-      {/* ✅ Hiển thị bảng */}
+      {/* ✅ Bảng hiển thị dữ liệu */}
       {data.length > 0 && (
         <table
           style={{
@@ -145,6 +141,7 @@ export default function Home() {
             width: "100%",
             backgroundColor: "#fff",
             boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
+            userSelect: "text", // 👉 Cho phép Ctrl/Shift + select
           }}
         >
           <thead>
@@ -158,7 +155,6 @@ export default function Home() {
                     borderBottom: "2px solid #ddd",
                     fontWeight: "bold",
                     textAlign: "center",
-                    userSelect: "text", // ✅ Cho phép bôi đen
                   }}
                 >
                   {h}
@@ -171,6 +167,7 @@ export default function Home() {
               const site = row[4];
               let rowCopy = [...row];
 
+              // ✅ Cập nhật giá nếu chuyển sang TEXT/HOME
               if (activeSheet !== "GP") {
                 const newPrice = getPriceFromOtherSheet(site, activeSheet);
                 if (newPrice) {
@@ -181,49 +178,24 @@ export default function Home() {
 
               return (
                 <tr key={rowIndex} style={{ borderBottom: "1px solid #eee" }}>
-                  {rowCopy.map((cell, colIndex) => {
-                    // ✅ Thu gọn ghi chú dài
-                    const isNote = header[colIndex] === "Ghi Chú";
-                    const isExpanded = expandedRows[rowIndex];
-                    const textDisplay =
-                      isNote && !isExpanded && cell?.length > 50
-                        ? `${cell.slice(0, 50)}...`
-                        : cell;
-
-                    return (
-                      <td
-                        key={colIndex}
-                        onDoubleClick={() => handleDoubleClickCopy(cell)}
-                        style={{
-                          padding: "8px",
-                          textAlign: "center",
-                          border: "1px solid #ddd",
-                          cursor: "text", // ✅ Cho phép highlight text
-                          userSelect: "text", // ✅ Rất quan trọng để Ctrl/Shift hoạt động
-                        }}
-                      >
-                        {isNote && cell?.length > 50 ? (
-                          <>
-                            {textDisplay}{" "}
-                            {!isExpanded && (
-                              <span
-                                onClick={() => toggleExpand(rowIndex)}
-                                style={{
-                                  color: "blue",
-                                  cursor: "pointer",
-                                  fontSize: "12px",
-                                }}
-                              >
-                                [Xem thêm]
-                              </span>
-                            )}
-                          </>
-                        ) : (
-                          textDisplay
-                        )}
-                      </td>
-                    );
-                  })}
+                  {rowCopy.map((cell, colIndex) => (
+                    <td
+                      key={colIndex}
+                      style={{
+                        padding: "8px",
+                        textAlign: "center",
+                        cursor: "text", // 👉 Chỉ copy khi Ctrl+C
+                        border: "1px solid #ddd",
+                        maxWidth: "250px",
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                      }}
+                      title={cell} // 👉 Hover hiện full text
+                    >
+                      {cell}
+                    </td>
+                  ))}
                 </tr>
               );
             })}
