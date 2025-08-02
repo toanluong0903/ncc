@@ -8,9 +8,8 @@ export default function Home() {
   const [homeData, setHomeData] = useState([]);
   const [activeSheet, setActiveSheet] = useState("GP");
   const [error, setError] = useState("");
-  const [selectedCells, setSelectedCells] = useState(new Set());
+  const [expandedNotes, setExpandedNotes] = useState({});
 
-  // 🔍 SEARCH API
   const handleSearch = async () => {
     setError("");
     setData([]);
@@ -30,7 +29,6 @@ export default function Home() {
     }
   };
 
-  // 📊 Lấy giá từ sheet khác
   const getPriceFromOtherSheet = (site, sheet) => {
     const source = sheet === "TEXT" ? textData : homeData;
     const match = source.find((row) => row[4] === site);
@@ -40,64 +38,40 @@ export default function Home() {
     return null;
   };
 
-  // 📋 Double click copy 1 ô
-  const handleDoubleClickCopy = (text) => {
-    navigator.clipboard.writeText(text);
-    alert(`✅ Đã copy: ${text}`);
-  };
-
-  // ✅ Click chọn nhiều ô
-  const handleCellClick = (rowIndex, colIndex) => {
-    const cellId = `${rowIndex}-${colIndex}`;
-    const newSelection = new Set(selectedCells);
-
-    if (newSelection.has(cellId)) {
-      newSelection.delete(cellId);
-    } else {
-      newSelection.add(cellId);
-    }
-    setSelectedCells(newSelection);
-  };
-
-  // 📋 Copy tất cả ô đã chọn (dạng 1 hàng ngang)
-  const handleCopySelected = () => {
-    const rows = [];
-    let currentRow = -1;
-    let temp = [];
-
-    Array.from(selectedCells)
-      .map((id) => id.split("-").map(Number))
-      .sort((a, b) => (a[0] - b[0]) || (a[1] - b[1]))
-      .forEach(([row, col]) => {
-        if (row !== currentRow) {
-          if (temp.length > 0) rows.push(temp.join("\t"));
-          temp = [];
-          currentRow = row;
-        }
-        temp.push(data[row][col]);
-      });
-
-    if (temp.length > 0) rows.push(temp.join("\t"));
-
-    navigator.clipboard.writeText(rows.join("\n"));
-    alert(`✅ Đã copy ${selectedCells.size} ô!`);
+  // ✅ Toggle ghi chú dài (ẩn/bật)
+  const toggleNote = (rowIndex) => {
+    setExpandedNotes((prev) => ({
+      ...prev,
+      [rowIndex]: !prev[rowIndex],
+    }));
   };
 
   return (
-    <div style={{ padding: "20px", fontFamily: "Arial", backgroundColor: "#fafafa", minHeight: "100vh" }}>
+    <div
+      style={{
+        padding: "20px",
+        fontFamily: "Arial",
+        backgroundColor: "#fafafa",
+        minHeight: "100vh",
+      }}
+    >
       <h2>Tool Check Site (Demo)</h2>
 
-      {/* 📥 Ô nhập */}
+      {/* Ô nhập */}
       <textarea
         rows={3}
-        style={{ width: "450px", padding: "8px", borderRadius: "5px", border: "1px solid #ccc" }}
+        style={{
+          width: "450px",
+          padding: "8px",
+          borderRadius: "5px",
+          border: "1px solid #ccc",
+        }}
         placeholder="Nhập site hoặc mã (mỗi dòng 1 giá trị)"
         value={input}
         onChange={(e) => setInput(e.target.value)}
       />
 
       <br />
-      {/* 🔍 Nút search */}
       <button
         onClick={handleSearch}
         style={{
@@ -116,73 +90,20 @@ export default function Home() {
 
       {error && <p style={{ color: "red", marginTop: "10px" }}>{error}</p>}
 
-      {/* ✅ 3 NÚT CHỌN SHEET */}
+      {/* Nút chọn Sheet */}
       {data.length > 0 && (
         <div style={{ marginTop: "20px" }}>
-          <button
-            onClick={() => setActiveSheet("GP")}
-            style={{
-              marginRight: "10px",
-              backgroundColor: activeSheet === "GP" ? "#28a745" : "#ccc",
-              color: "#fff",
-              padding: "8px 16px",
-              border: "none",
-              borderRadius: "5px",
-              cursor: "pointer"
-            }}
-          >
+          <button onClick={() => setActiveSheet("GP")} style={{ marginRight: "10px" }}>
             GP
           </button>
-          <button
-            onClick={() => setActiveSheet("TEXT")}
-            style={{
-              marginRight: "10px",
-              backgroundColor: activeSheet === "TEXT" ? "#28a745" : "#ccc",
-              color: "#fff",
-              padding: "8px 16px",
-              border: "none",
-              borderRadius: "5px",
-              cursor: "pointer"
-            }}
-          >
+          <button onClick={() => setActiveSheet("TEXT")} style={{ marginRight: "10px" }}>
             TEXT
           </button>
-          <button
-            onClick={() => setActiveSheet("HOME")}
-            style={{
-              backgroundColor: activeSheet === "HOME" ? "#28a745" : "#ccc",
-              color: "#fff",
-              padding: "8px 16px",
-              border: "none",
-              borderRadius: "5px",
-              cursor: "pointer"
-            }}
-          >
-            HOME
-          </button>
+          <button onClick={() => setActiveSheet("HOME")}>HOME</button>
         </div>
       )}
 
-      {/* ✅ Nút Copy */}
-      {selectedCells.size > 0 && (
-        <div style={{ marginTop: "10px" }}>
-          <button
-            onClick={handleCopySelected}
-            style={{
-              backgroundColor: "#007bff",
-              color: "#fff",
-              padding: "8px 16px",
-              borderRadius: "5px",
-              border: "none",
-              cursor: "pointer",
-            }}
-          >
-            📋 Copy {selectedCells.size} ô
-          </button>
-        </div>
-      )}
-
-      {/* 📊 Bảng dữ liệu */}
+      {/* ✅ Bảng kết quả – hỗ trợ Ctrl + C */}
       {data.length > 0 && (
         <table
           style={{
@@ -216,7 +137,7 @@ export default function Home() {
               const site = row[4];
               let rowCopy = [...row];
 
-              // 🔄 Update giá khi chọn TEXT hoặc HOME
+              // ✅ Nếu chọn TEXT hoặc HOME -> đổi giá
               if (activeSheet !== "GP") {
                 const newPrice = getPriceFromOtherSheet(site, activeSheet);
                 if (newPrice) {
@@ -228,20 +149,41 @@ export default function Home() {
               return (
                 <tr key={rowIndex} style={{ borderBottom: "1px solid #eee" }}>
                   {rowCopy.map((cell, colIndex) => {
-                    const cellId = `${rowIndex}-${colIndex}`;
-                    const isSelected = selectedCells.has(cellId);
+                    // ✅ Xử lý riêng cho cột Ghi Chú (index 8)
+                    if (colIndex === 8 && typeof cell === "string" && cell.length > 30) {
+                      const isExpanded = expandedNotes[rowIndex];
+                      const displayText = isExpanded ? cell : cell.substring(0, 30) + "...";
 
+                      return (
+                        <td
+                          key={colIndex}
+                          onClick={() => toggleNote(rowIndex)}
+                          style={{
+                            padding: "8px",
+                            textAlign: "left",
+                            border: "1px solid #ddd",
+                            cursor: "pointer",
+                            whiteSpace: "normal",
+                            maxWidth: "300px",
+                          }}
+                        >
+                          {displayText}
+                          {!isExpanded && (
+                            <span style={{ color: "blue", fontSize: "12px" }}> [Xem thêm]</span>
+                          )}
+                        </td>
+                      );
+                    }
+
+                    // ✅ Các ô khác (Ctrl + C vẫn dùng bình thường)
                     return (
                       <td
                         key={colIndex}
-                        onClick={() => handleCellClick(rowIndex, colIndex)}
-                        onDoubleClick={() => handleDoubleClickCopy(cell)}
                         style={{
                           padding: "8px",
                           textAlign: "center",
-                          cursor: "pointer",
-                          backgroundColor: isSelected ? "#cce5ff" : "transparent",
                           border: "1px solid #ddd",
+                          userSelect: "text", // cho phép bôi đen và Ctrl + C
                         }}
                       >
                         {cell}
