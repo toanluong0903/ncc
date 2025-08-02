@@ -9,6 +9,7 @@ export default function Home() {
   const [activeSheet, setActiveSheet] = useState("GP");
   const [error, setError] = useState("");
 
+  // ✅ Tìm kiếm
   const handleSearch = async () => {
     setError("");
     setData([]);
@@ -28,43 +29,71 @@ export default function Home() {
     }
   };
 
-  // 🟢 Lấy giá từ sheet TEXT hoặc HOME nếu người dùng bấm chuyển
+  // ✅ Lấy giá từ sheet TEXT hoặc HOME
   const getPriceFromOtherSheet = (site, sheet) => {
     const source = sheet === "TEXT" ? textData : homeData;
-    const match = source.find((row) => row[4] === site);
+    const match = source.find(row => row[4] === site);
     if (match) {
       return { giaBan: match[9] || "", giaMua: match[10] || "" };
     }
     return null;
   };
 
-  // 🟢 Hàm copy nhanh khi click vào 1 ô
-  const handleCellClick = (value) => {
-    navigator.clipboard.writeText(value);
-    alert(`📋 Đã copy: ${value}`);
+  // ✅ Copy 1 ô duy nhất khi double click
+  const handleCellDoubleClick = (text) => {
+    navigator.clipboard.writeText(text);
+    alert(`✅ Đã copy: ${text}`);
+  };
+
+  // ✅ Quản lý nhiều ô được chọn
+  const [selectedCells, setSelectedCells] = useState([]);
+
+  const toggleCellSelection = (rowIdx, colIdx) => {
+    const cellKey = `${rowIdx}-${colIdx}`;
+    setSelectedCells((prev) =>
+      prev.includes(cellKey)
+        ? prev.filter((c) => c !== cellKey)
+        : [...prev, cellKey]
+    );
+  };
+
+  // ✅ Copy toàn bộ ô đã chọn
+  const copySelectedCells = () => {
+    const texts = [];
+    selectedCells.forEach((cellKey) => {
+      const [rowIdx, colIdx] = cellKey.split("-").map(Number);
+      texts.push(data[rowIdx][colIdx]);
+    });
+    navigator.clipboard.writeText(texts.join("\n"));
+    alert(`✅ Đã copy ${texts.length} ô!`);
+  };
+
+  // ✅ Ẩn ghi chú dài, click để mở rộng
+  const renderCellContent = (text) => {
+    if (typeof text === "string" && text.length > 30) {
+      return (
+        <span
+          onClick={(e) => {
+            e.target.innerText = text;
+          }}
+          style={{ cursor: "pointer", color: "#555" }}
+        >
+          {text.slice(0, 30)}... <em>(click để xem)</em>
+        </span>
+      );
+    }
+    return text;
   };
 
   return (
-    <div
-      style={{
-        padding: "20px",
-        fontFamily: "Arial",
-        backgroundColor: "#fafafa",
-        minHeight: "100vh",
-      }}
-    >
-      <h2>Tool Check Site (Demo)</h2>
+    <div style={{ padding: "20px", fontFamily: "Arial", backgroundColor: "#f5f5f5", minHeight: "100vh" }}>
+      <h2>Tool Check Site</h2>
 
-      {/* Ô nhập */}
+      {/* Nhập site hoặc mã */}
       <textarea
         rows={3}
-        style={{
-          width: "450px",
-          padding: "8px",
-          borderRadius: "5px",
-          border: "1px solid #ccc",
-        }}
-        placeholder="Nhập site hoặc mã (nhiều giá trị cách nhau bằng dấu phẩy hoặc xuống dòng)"
+        style={{ width: "450px", padding: "8px", borderRadius: "5px", border: "1px solid #ccc" }}
+        placeholder="Nhập site hoặc mã (cách nhau bằng dấu phẩy hoặc xuống dòng)"
         value={input}
         onChange={(e) => setInput(e.target.value)}
       />
@@ -90,17 +119,32 @@ export default function Home() {
       {/* Nút chuyển sheet */}
       {data.length > 0 && (
         <div style={{ marginTop: "20px" }}>
-          <button onClick={() => setActiveSheet("GP")} style={{ marginRight: "10px" }}>
-            GP
-          </button>
-          <button onClick={() => setActiveSheet("TEXT")} style={{ marginRight: "10px" }}>
-            TEXT
-          </button>
+          <button onClick={() => setActiveSheet("GP")} style={{ marginRight: "10px" }}>GP</button>
+          <button onClick={() => setActiveSheet("TEXT")} style={{ marginRight: "10px" }}>TEXT</button>
           <button onClick={() => setActiveSheet("HOME")}>HOME</button>
         </div>
       )}
 
-      {/* Hiển thị kết quả */}
+      {/* Nút copy nhiều ô */}
+      {selectedCells.length > 0 && (
+        <button
+          onClick={copySelectedCells}
+          style={{
+            marginTop: "10px",
+            marginLeft: "10px",
+            padding: "5px 12px",
+            backgroundColor: "#007bff",
+            color: "#fff",
+            border: "none",
+            borderRadius: "4px",
+            cursor: "pointer",
+          }}
+        >
+          📋 Copy {selectedCells.length} ô
+        </button>
+      )}
+
+      {/* Bảng kết quả */}
       {data.length > 0 && (
         <table
           style={{
@@ -120,7 +164,6 @@ export default function Home() {
                     padding: "10px",
                     backgroundColor: "#f0f0f0",
                     borderBottom: "2px solid #ddd",
-                    border: "1px solid #ccc",
                     fontWeight: "bold",
                     textAlign: "center",
                   }}
@@ -131,11 +174,10 @@ export default function Home() {
             </tr>
           </thead>
           <tbody>
-            {data.map((row, idx) => {
+            {data.map((row, rowIdx) => {
               const site = row[4];
               let rowCopy = [...row];
 
-              // 🟢 Nếu đang chọn TEXT hoặc HOME → update giá bán & giá mua
               if (activeSheet !== "GP") {
                 const newPrice = getPriceFromOtherSheet(site, activeSheet);
                 if (newPrice) {
@@ -145,22 +187,27 @@ export default function Home() {
               }
 
               return (
-                <tr key={idx} style={{ borderBottom: "1px solid #eee" }}>
-                  {rowCopy.map((cell, i) => (
-                    <td
-                      key={i}
-                      style={{
-                        padding: "8px",
-                        textAlign: "center",
-                        border: "1px solid #ccc",
-                        userSelect: "text", // ✅ Cho phép bôi đen nhiều ô
-                        cursor: "pointer", // ✅ Biết là click được
-                      }}
-                      onClick={() => handleCellClick(cell)} // ✅ Click copy giá trị ô
-                    >
-                      {cell}
-                    </td>
-                  ))}
+                <tr key={rowIdx} style={{ borderBottom: "1px solid #eee" }}>
+                  {rowCopy.map((cell, colIdx) => {
+                    const cellKey = `${rowIdx}-${colIdx}`;
+                    const isSelected = selectedCells.includes(cellKey);
+                    return (
+                      <td
+                        key={colIdx}
+                        onClick={() => toggleCellSelection(rowIdx, colIdx)} // ✅ chỉ chọn/bỏ chọn
+                        onDoubleClick={() => handleCellDoubleClick(cell)} // ✅ double click mới copy nhanh 1 ô
+                        style={{
+                          padding: "8px",
+                          textAlign: "center",
+                          cursor: "pointer",
+                          backgroundColor: isSelected ? "#cce5ff" : "transparent",
+                          border: "1px solid #ddd",
+                        }}
+                      >
+                        {renderCellContent(cell)}
+                      </td>
+                    );
+                  })}
                 </tr>
               );
             })}
