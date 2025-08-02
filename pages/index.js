@@ -8,8 +8,9 @@ export default function Home() {
   const [homeData, setHomeData] = useState([]);
   const [activeSheet, setActiveSheet] = useState("GP");
   const [error, setError] = useState("");
+  const [expandedRows, setExpandedRows] = useState({});
 
-  // 📌 Gọi API check site
+  // ✅ Gọi API lấy dữ liệu
   const handleSearch = async () => {
     setError("");
     setData([]);
@@ -29,7 +30,7 @@ export default function Home() {
     }
   };
 
-  // 📌 Lấy giá từ Text/Home
+  // ✅ Lấy giá bán/mua từ sheet TEXT hoặc HOME nếu chọn
   const getPriceFromOtherSheet = (site, sheet) => {
     const source = sheet === "TEXT" ? textData : homeData;
     const match = source.find((row) => row[4] === site);
@@ -37,6 +38,14 @@ export default function Home() {
       return { giaBan: match[9] || "", giaMua: match[10] || "" };
     }
     return null;
+  };
+
+  // ✅ Toggle xem thêm/thu gọn cho cột “Ghi chú”
+  const toggleExpand = (rowIndex) => {
+    setExpandedRows((prev) => ({
+      ...prev,
+      [rowIndex]: !prev[rowIndex],
+    }));
   };
 
   return (
@@ -50,7 +59,7 @@ export default function Home() {
     >
       <h2>Tool Check Site (Demo)</h2>
 
-      {/* Ô nhập site */}
+      {/* Ô nhập site/mã */}
       <textarea
         rows={3}
         style={{
@@ -65,7 +74,7 @@ export default function Home() {
       />
 
       <br />
-      {/* ✅ Nút search */}
+      {/* Nút search */}
       <button
         onClick={handleSearch}
         style={{
@@ -84,55 +93,53 @@ export default function Home() {
 
       {error && <p style={{ color: "red", marginTop: "10px" }}>{error}</p>}
 
-      {/* ✅ Nút chọn Sheet */}
-      {data.length > 0 && (
-        <div style={{ marginTop: "20px" }}>
-          <button
-            onClick={() => setActiveSheet("GP")}
-            style={{
-              marginRight: "10px",
-              backgroundColor: activeSheet === "GP" ? "#1E90FF" : "#f0f0f0",
-              color: activeSheet === "GP" ? "#fff" : "#000",
-              fontWeight: "bold",
-              padding: "6px 14px",
-              borderRadius: "6px",
-              border: "none",
-              cursor: "pointer",
-            }}
-          >
-            GP
-          </button>
-          <button
-            onClick={() => setActiveSheet("TEXT")}
-            style={{
-              marginRight: "10px",
-              backgroundColor: activeSheet === "TEXT" ? "#1E90FF" : "#f0f0f0",
-              color: activeSheet === "TEXT" ? "#fff" : "#000",
-              fontWeight: "bold",
-              padding: "6px 14px",
-              borderRadius: "6px",
-              border: "none",
-              cursor: "pointer",
-            }}
-          >
-            TEXT
-          </button>
-          <button
-            onClick={() => setActiveSheet("HOME")}
-            style={{
-              backgroundColor: activeSheet === "HOME" ? "#1E90FF" : "#f0f0f0",
-              color: activeSheet === "HOME" ? "#fff" : "#000",
-              fontWeight: "bold",
-              padding: "6px 14px",
-              borderRadius: "6px",
-              border: "none",
-              cursor: "pointer",
-            }}
-          >
-            HOME
-          </button>
-        </div>
-      )}
+      {/* ✅ 3 nút GP/TEXT/HOME luôn hiển thị */}
+      <div style={{ marginTop: "20px" }}>
+        <button
+          onClick={() => setActiveSheet("GP")}
+          style={{
+            marginRight: "10px",
+            backgroundColor: activeSheet === "GP" ? "#007bff" : "#e0e0e0",
+            color: activeSheet === "GP" ? "#fff" : "#000",
+            padding: "8px 16px",
+            borderRadius: "5px",
+            border: "none",
+            cursor: "pointer",
+            fontWeight: "bold",
+          }}
+        >
+          GP
+        </button>
+        <button
+          onClick={() => setActiveSheet("TEXT")}
+          style={{
+            marginRight: "10px",
+            backgroundColor: activeSheet === "TEXT" ? "#007bff" : "#e0e0e0",
+            color: activeSheet === "TEXT" ? "#fff" : "#000",
+            padding: "8px 16px",
+            borderRadius: "5px",
+            border: "none",
+            cursor: "pointer",
+            fontWeight: "bold",
+          }}
+        >
+          TEXT
+        </button>
+        <button
+          onClick={() => setActiveSheet("HOME")}
+          style={{
+            backgroundColor: activeSheet === "HOME" ? "#007bff" : "#e0e0e0",
+            color: activeSheet === "HOME" ? "#fff" : "#000",
+            padding: "8px 16px",
+            borderRadius: "5px",
+            border: "none",
+            cursor: "pointer",
+            fontWeight: "bold",
+          }}
+        >
+          HOME
+        </button>
+      </div>
 
       {/* ✅ Bảng kết quả */}
       {data.length > 0 && (
@@ -143,6 +150,7 @@ export default function Home() {
             width: "100%",
             backgroundColor: "#fff",
             boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
+            userSelect: "text", // Cho phép bôi đen như Excel
           }}
         >
           <thead>
@@ -168,7 +176,7 @@ export default function Home() {
               const site = row[4];
               let rowCopy = [...row];
 
-              // ✅ Nếu đổi sang TEXT hoặc HOME -> chỉ thay Giá Bán & Giá Mua
+              // Nếu chọn TEXT/HOME → thay giá bán/mua
               if (activeSheet !== "GP") {
                 const newPrice = getPriceFromOtherSheet(site, activeSheet);
                 if (newPrice) {
@@ -185,28 +193,47 @@ export default function Home() {
                   }}
                 >
                   {rowCopy.map((cell, colIndex) => {
-                    // ✅ Check cột "Ghi Chú" (index = 9 hay 8 tuỳ dữ liệu)
-                    const isNoteColumn = header[colIndex] === "Ghi Chú";
+                    // ✅ Xử lý cột “Ghi Chú”
+                    if (header[colIndex] === "Ghi Chú" && typeof cell === "string") {
+                      const isLong = cell.length > 50;
+                      const isExpanded = expandedRows[rowIndex];
+
+                      return (
+                        <td
+                          key={colIndex}
+                          style={{
+                            padding: "8px",
+                            textAlign: "left",
+                            border: "1px solid #ddd",
+                            cursor: "text",
+                          }}
+                        >
+                          {isLong && !isExpanded ? cell.slice(0, 50) + "..." : cell}
+                          {isLong && (
+                            <span
+                              onClick={() => toggleExpand(rowIndex)}
+                              style={{
+                                color: "blue",
+                                marginLeft: "6px",
+                                cursor: "pointer",
+                                fontSize: "12px",
+                              }}
+                            >
+                              {isExpanded ? "[Thu gọn]" : "[Xem thêm]"}
+                            </span>
+                          )}
+                        </td>
+                      );
+                    }
 
                     return (
                       <td
                         key={colIndex}
-                        className={isNoteColumn ? "note-cell" : ""}
-                        onClick={(e) => {
-                          if (isNoteColumn) {
-                            e.currentTarget.classList.toggle("expanded");
-                          }
-                        }}
                         style={{
                           padding: "8px",
                           textAlign: "center",
+                          cursor: "text",
                           border: "1px solid #ddd",
-                          cursor: isNoteColumn ? "pointer" : "text",
-                          userSelect: "text", // ✅ cho phép Ctrl+C
-                          maxWidth: isNoteColumn ? "180px" : "auto",
-                          whiteSpace: isNoteColumn ? "nowrap" : "normal",
-                          overflow: isNoteColumn ? "hidden" : "visible",
-                          textOverflow: isNoteColumn ? "ellipsis" : "clip",
                         }}
                       >
                         {cell}
@@ -219,14 +246,6 @@ export default function Home() {
           </tbody>
         </table>
       )}
-
-      {/* ✅ CSS inline cho expanded (mở rộng ghi chú) */}
-      <style jsx>{`
-        .note-cell.expanded {
-          white-space: normal !important;
-          max-width: none !important;
-        }
-      `}</style>
     </div>
   );
 }
