@@ -8,10 +8,8 @@ export default function Home() {
   const [homeData, setHomeData] = useState([]);
   const [activeSheet, setActiveSheet] = useState("GP");
   const [error, setError] = useState("");
-  const [selectedCells, setSelectedCells] = useState(new Set());
-  const [lastClicked, setLastClicked] = useState(null);
 
-  // ✅ Tìm kiếm site
+  // 📌 Gọi API check site
   const handleSearch = async () => {
     setError("");
     setData([]);
@@ -31,7 +29,7 @@ export default function Home() {
     }
   };
 
-  // ✅ Lấy giá từ sheet TEXT/HOME nếu người dùng chuyển
+  // 📌 Lấy giá từ Text/Home
   const getPriceFromOtherSheet = (site, sheet) => {
     const source = sheet === "TEXT" ? textData : homeData;
     const match = source.find((row) => row[4] === site);
@@ -39,41 +37,6 @@ export default function Home() {
       return { giaBan: match[9] || "", giaMua: match[10] || "" };
     }
     return null;
-  };
-
-  // ✅ Xử lý click chọn ô (Ctrl + click chọn nhiều, Shift + click chọn vùng)
-  const handleCellClick = (rowIndex, colIndex, event) => {
-    const cellId = `${rowIndex}-${colIndex}`;
-    const newSelection = new Set(selectedCells);
-
-    if (event.shiftKey && lastClicked) {
-      // Chọn vùng (Shift)
-      const [lastRow, lastCol] = lastClicked.split("-").map(Number);
-      const rowStart = Math.min(lastRow, rowIndex);
-      const rowEnd = Math.max(lastRow, rowIndex);
-      const colStart = Math.min(lastCol, colIndex);
-      const colEnd = Math.max(lastCol, colIndex);
-
-      for (let r = rowStart; r <= rowEnd; r++) {
-        for (let c = colStart; c <= colEnd; c++) {
-          newSelection.add(`${r}-${c}`);
-        }
-      }
-    } else if (event.ctrlKey || event.metaKey) {
-      // Chọn thêm (Ctrl)
-      if (newSelection.has(cellId)) {
-        newSelection.delete(cellId);
-      } else {
-        newSelection.add(cellId);
-      }
-      setLastClicked(cellId);
-    } else {
-      // Click thường (chỉ chọn 1 ô)
-      newSelection.clear();
-      newSelection.add(cellId);
-      setLastClicked(cellId);
-    }
-    setSelectedCells(newSelection);
   };
 
   return (
@@ -87,7 +50,7 @@ export default function Home() {
     >
       <h2>Tool Check Site (Demo)</h2>
 
-      {/* ✅ Ô nhập site */}
+      {/* Ô nhập site */}
       <textarea
         rows={3}
         style={{
@@ -102,8 +65,7 @@ export default function Home() {
       />
 
       <br />
-
-      {/* ✅ Nút tìm kiếm */}
+      {/* ✅ Nút search */}
       <button
         onClick={handleSearch}
         style={{
@@ -122,30 +84,57 @@ export default function Home() {
 
       {error && <p style={{ color: "red", marginTop: "10px" }}>{error}</p>}
 
-      {/* ✅ Nút chọn sheet GP/TEXT/HOME */}
+      {/* ✅ Nút chọn Sheet */}
       {data.length > 0 && (
         <div style={{ marginTop: "20px" }}>
-          {["GP", "TEXT", "HOME"].map((sheet) => (
-            <button
-              key={sheet}
-              onClick={() => setActiveSheet(sheet)}
-              style={{
-                marginRight: "10px",
-                backgroundColor: activeSheet === sheet ? "#2E8B57" : "#ddd",
-                color: activeSheet === sheet ? "#fff" : "#000",
-                border: "none",
-                padding: "8px 14px",
-                borderRadius: "5px",
-                cursor: "pointer",
-              }}
-            >
-              {sheet}
-            </button>
-          ))}
+          <button
+            onClick={() => setActiveSheet("GP")}
+            style={{
+              marginRight: "10px",
+              backgroundColor: activeSheet === "GP" ? "#1E90FF" : "#f0f0f0",
+              color: activeSheet === "GP" ? "#fff" : "#000",
+              fontWeight: "bold",
+              padding: "6px 14px",
+              borderRadius: "6px",
+              border: "none",
+              cursor: "pointer",
+            }}
+          >
+            GP
+          </button>
+          <button
+            onClick={() => setActiveSheet("TEXT")}
+            style={{
+              marginRight: "10px",
+              backgroundColor: activeSheet === "TEXT" ? "#1E90FF" : "#f0f0f0",
+              color: activeSheet === "TEXT" ? "#fff" : "#000",
+              fontWeight: "bold",
+              padding: "6px 14px",
+              borderRadius: "6px",
+              border: "none",
+              cursor: "pointer",
+            }}
+          >
+            TEXT
+          </button>
+          <button
+            onClick={() => setActiveSheet("HOME")}
+            style={{
+              backgroundColor: activeSheet === "HOME" ? "#1E90FF" : "#f0f0f0",
+              color: activeSheet === "HOME" ? "#fff" : "#000",
+              fontWeight: "bold",
+              padding: "6px 14px",
+              borderRadius: "6px",
+              border: "none",
+              cursor: "pointer",
+            }}
+          >
+            HOME
+          </button>
         </div>
       )}
 
-      {/* ✅ Bảng hiển thị dữ liệu */}
+      {/* ✅ Bảng kết quả */}
       {data.length > 0 && (
         <table
           style={{
@@ -154,7 +143,6 @@ export default function Home() {
             width: "100%",
             backgroundColor: "#fff",
             boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
-            userSelect: "none", // 👉 Ngăn bôi đen chữ default
           }}
         >
           <thead>
@@ -180,7 +168,7 @@ export default function Home() {
               const site = row[4];
               let rowCopy = [...row];
 
-              // ✅ Cập nhật giá nếu chuyển sang TEXT/HOME
+              // ✅ Nếu đổi sang TEXT hoặc HOME -> chỉ thay Giá Bán & Giá Mua
               if (activeSheet !== "GP") {
                 const newPrice = getPriceFromOtherSheet(site, activeSheet);
                 if (newPrice) {
@@ -190,27 +178,36 @@ export default function Home() {
               }
 
               return (
-                <tr key={rowIndex} style={{ borderBottom: "1px solid #eee" }}>
+                <tr
+                  key={rowIndex}
+                  style={{
+                    borderBottom: "1px solid #eee",
+                  }}
+                >
                   {rowCopy.map((cell, colIndex) => {
-                    const cellId = `${rowIndex}-${colIndex}`;
-                    const isSelected = selectedCells.has(cellId);
+                    // ✅ Check cột "Ghi Chú" (index = 9 hay 8 tuỳ dữ liệu)
+                    const isNoteColumn = header[colIndex] === "Ghi Chú";
 
                     return (
                       <td
                         key={colIndex}
-                        onClick={(e) => handleCellClick(rowIndex, colIndex, e)}
+                        className={isNoteColumn ? "note-cell" : ""}
+                        onClick={(e) => {
+                          if (isNoteColumn) {
+                            e.currentTarget.classList.toggle("expanded");
+                          }
+                        }}
                         style={{
                           padding: "8px",
                           textAlign: "center",
-                          cursor: "pointer",
                           border: "1px solid #ddd",
-                          maxWidth: "250px",
-                          whiteSpace: "nowrap",
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          backgroundColor: isSelected ? "#cce5ff" : "transparent",
+                          cursor: isNoteColumn ? "pointer" : "text",
+                          userSelect: "text", // ✅ cho phép Ctrl+C
+                          maxWidth: isNoteColumn ? "180px" : "auto",
+                          whiteSpace: isNoteColumn ? "nowrap" : "normal",
+                          overflow: isNoteColumn ? "hidden" : "visible",
+                          textOverflow: isNoteColumn ? "ellipsis" : "clip",
                         }}
-                        title={cell} // 👉 Hover hiện full text
                       >
                         {cell}
                       </td>
@@ -222,6 +219,14 @@ export default function Home() {
           </tbody>
         </table>
       )}
+
+      {/* ✅ CSS inline cho expanded (mở rộng ghi chú) */}
+      <style jsx>{`
+        .note-cell.expanded {
+          white-space: normal !important;
+          max-width: none !important;
+        }
+      `}</style>
     </div>
   );
 }
