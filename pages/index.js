@@ -6,11 +6,7 @@ export default function Home() {
   const [header, setHeader] = useState([]);
   const [activeSheet, setActiveSheet] = useState("GP"); // ✅ Sheet mặc định
   const [error, setError] = useState("");
-<<<<<<< HEAD
-  const [expanded, setExpanded] = useState({}); // 🔥 trạng thái mở rộng ghi chú
-=======
-  const [expandedRows, setExpandedRows] = useState({}); // ✅ Để ẩn/hiện ghi chú
->>>>>>> ddf2138
+  const [expandedRows, setExpandedRows] = useState({}); // ✅ Để ẩn/hiện ghi chú dài
 
   // ✅ Toggle ẩn/hiện ghi chú dài
   const toggleRow = (rowIndex) => {
@@ -42,18 +38,6 @@ export default function Home() {
     }
   };
 
-<<<<<<< HEAD
-  const getPriceFromOtherSheet = (site, sheet) => {
-    const source = sheet === "TEXT" ? textData : homeData;
-    const match = source.find(row => row[4] === site);
-    if (match) {
-      return { giaBan: match[9] || "", giaMua: match[10] || "" };
-    }
-    return null;
-  };
-
-=======
->>>>>>> ddf2138
   return (
     <div
       style={{
@@ -151,45 +135,6 @@ export default function Home() {
             </tr>
           </thead>
           <tbody>
-<<<<<<< HEAD
-            {data.map((row, idx) => {
-              const site = row[4];
-              let rowCopy = [...row];
-
-              // Nếu chuyển sang TEXT hoặc HOME -> chỉ thay Giá Bán (cột 9) & Giá Mua (cột 10)
-              if (activeSheet !== "GP") {
-                const newPrice = getPriceFromOtherSheet(site, activeSheet);
-                if (newPrice) {
-                  rowCopy[9] = newPrice.giaBan;
-                  rowCopy[10] = newPrice.giaMua;
-                }
-              }
-
-              return (
-                <tr key={idx} style={{ borderBottom: "1px solid #eee" }}>
-                  {rowCopy.map((cell, i) => (
-                    <td key={i} style={{ padding: "8px", textAlign: "center" }}>
-                      {i === 8 && typeof cell === "string" && cell.length > 30 ? ( // 🔥 cột Ghi Chú (index 8)
-                        <>
-                          {expanded[idx] ? cell : `${cell.slice(0, 30)}... `}
-                          <span
-                            style={{ color: "blue", cursor: "pointer" }}
-                            onClick={() =>
-                              setExpanded((prev) => ({ ...prev, [idx]: !prev[idx] }))
-                            }
-                          >
-                            {expanded[idx] ? "Thu gọn" : "Xem thêm"}
-                          </span>
-                        </>
-                      ) : (
-                        cell
-                      )}
-                    </td>
-                  ))}
-                </tr>
-              );
-            })}
-=======
             {data.map((row, idx) => (
               <tr key={idx} style={{ borderBottom: "1px solid #eee" }}>
                 {row.map((cell, i) => (
@@ -228,7 +173,6 @@ export default function Home() {
                 ))}
               </tr>
             ))}
->>>>>>> ddf2138
           </tbody>
         </table>
       )}
