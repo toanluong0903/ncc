@@ -4,47 +4,38 @@ export default function Home() {
   const [input, setInput] = useState("");
   const [data, setData] = useState([]);
   const [header, setHeader] = useState([]);
-  const [textData, setTextData] = useState([]);
-  const [homeData, setHomeData] = useState([]);
-  const [activeSheet, setActiveSheet] = useState("GP");
+  const [activeSheet, setActiveSheet] = useState("GP"); // ✅ Sheet mặc định
   const [error, setError] = useState("");
-  const [expandedNotes, setExpandedNotes] = useState({}); // ✅ trạng thái theo dõi ghi chú đã mở rộng
+  const [expandedRows, setExpandedRows] = useState({}); // ✅ Để ẩn/hiện ghi chú
 
+  // ✅ Toggle ẩn/hiện ghi chú dài
+  const toggleRow = (rowIndex) => {
+    setExpandedRows((prev) => ({
+      ...prev,
+      [rowIndex]: !prev[rowIndex],
+    }));
+  };
+
+  // ✅ Hàm tìm kiếm (gửi tên sheet nào đang chọn)
   const handleSearch = async () => {
     setError("");
     setData([]);
+
     try {
-      const res = await fetch(`/api/check?keyword=${encodeURIComponent(input)}`);
+      const res = await fetch(
+        `/api/check?keyword=${encodeURIComponent(input)}&sheet=${activeSheet}`
+      );
       const json = await res.json();
+
       if (json.results) {
         setHeader(json.header);
         setData(json.results);
-        setTextData(json.textData);
-        setHomeData(json.homeData);
       } else {
         setError(json.message || "Không tìm thấy");
       }
     } catch (err) {
       setError("Lỗi server");
     }
-  };
-
-  // 🟢 Lấy giá từ TEXT hoặc HOME nếu activeSheet thay đổi
-  const getPriceFromOtherSheet = (site, sheet) => {
-    const source = sheet === "TEXT" ? textData : homeData;
-    const match = source.find((row) => row[4] === site);
-    if (match) {
-      return { giaBan: match[9] || "", giaMua: match[10] || "" };
-    }
-    return null;
-  };
-
-  // ✅ Hàm toggle mở rộng ghi chú
-  const toggleNote = (index) => {
-    setExpandedNotes((prev) => ({
-      ...prev,
-      [index]: !prev[index],
-    }));
   };
 
   return (
@@ -58,7 +49,7 @@ export default function Home() {
     >
       <h2>Tool Check Site (Demo)</h2>
 
-      {/* Ô nhập */}
+      {/* Ô nhập site hoặc mã */}
       <textarea
         rows={3}
         style={{
@@ -67,11 +58,35 @@ export default function Home() {
           borderRadius: "5px",
           border: "1px solid #ccc",
         }}
-        placeholder="Nhập site hoặc mã (nhiều giá trị cách nhau bằng dấu phẩy hoặc xuống dòng)"
+        placeholder="Nhập site hoặc mã (mỗi dòng 1 giá trị)"
         value={input}
         onChange={(e) => setInput(e.target.value)}
       />
       <br />
+
+      {/* ✅ 3 nút chọn sheet */}
+      <div style={{ marginTop: "10px" }}>
+        {["GP", "TEXT", "HOME"].map((sheet) => (
+          <button
+            key={sheet}
+            onClick={() => setActiveSheet(sheet)}
+            style={{
+              marginRight: "10px",
+              padding: "8px 15px",
+              backgroundColor: activeSheet === sheet ? "#2E8B57" : "#ccc",
+              color: activeSheet === sheet ? "#fff" : "#000",
+              border: "none",
+              borderRadius: "5px",
+              cursor: "pointer",
+              fontWeight: "bold",
+            }}
+          >
+            {sheet}
+          </button>
+        ))}
+      </div>
+
+      {/* Nút tìm kiếm */}
       <button
         onClick={handleSearch}
         style={{
@@ -90,26 +105,7 @@ export default function Home() {
 
       {error && <p style={{ color: "red", marginTop: "10px" }}>{error}</p>}
 
-      {/* Nút chuyển sheet */}
-      {data.length > 0 && (
-        <div style={{ marginTop: "20px" }}>
-          <button
-            onClick={() => setActiveSheet("GP")}
-            style={{ marginRight: "10px" }}
-          >
-            GP
-          </button>
-          <button
-            onClick={() => setActiveSheet("TEXT")}
-            style={{ marginRight: "10px" }}
-          >
-            TEXT
-          </button>
-          <button onClick={() => setActiveSheet("HOME")}>HOME</button>
-        </div>
-      )}
-
-      {/* Hiển thị kết quả */}
+      {/* ✅ Bảng kết quả */}
       {data.length > 0 && (
         <table
           style={{
@@ -139,56 +135,44 @@ export default function Home() {
             </tr>
           </thead>
           <tbody>
-            {data.map((row, idx) => {
-              const site = row[4];
-              let rowCopy = [...row];
-
-              // 🟢 Nếu chuyển sang TEXT hoặc HOME -> chỉ thay Giá Bán (cột 9) & Giá Mua (cột 10)
-              if (activeSheet !== "GP") {
-                const newPrice = getPriceFromOtherSheet(site, activeSheet);
-                if (newPrice) {
-                  rowCopy[9] = newPrice.giaBan;
-                  rowCopy[10] = newPrice.giaMua;
-                }
-              }
-
-              return (
-                <tr key={idx} style={{ borderBottom: "1px solid #eee" }}>
-                  {rowCopy.map((cell, i) => {
-                    // ✅ Cột Ghi Chú (index 8)
-                    if (i === 8 && typeof cell === "string" && cell.length > 40) {
-                      const isExpanded = expandedNotes[idx];
-                      const shortText = cell.slice(0, 40) + "...";
-
-                      return (
-                        <td
-                          key={i}
-                          style={{ padding: "8px", textAlign: "center" }}
+            {data.map((row, idx) => (
+              <tr key={idx} style={{ borderBottom: "1px solid #eee" }}>
+                {row.map((cell, i) => (
+                  <td
+                    key={i}
+                    style={{
+                      padding: "8px",
+                      textAlign: "center",
+                      maxWidth: i === 8 ? "250px" : "auto",
+                      wordBreak: "break-word",
+                    }}
+                  >
+                    {/* ✅ CỘT GHI CHÚ – Thu gọn / Mở rộng */}
+                    {i === 8 && cell && cell.length > 50 ? (
+                      <span>
+                        {expandedRows[idx]
+                          ? cell
+                          : `${cell.slice(0, 50)}... `}
+                        <button
+                          onClick={() => toggleRow(idx)}
+                          style={{
+                            color: "blue",
+                            border: "none",
+                            background: "transparent",
+                            cursor: "pointer",
+                            fontSize: "12px",
+                          }}
                         >
-                          {isExpanded ? cell : shortText}{" "}
-                          <span
-                            onClick={() => toggleNote(idx)}
-                            style={{
-                              color: "blue",
-                              cursor: "pointer",
-                              fontSize: "12px",
-                            }}
-                          >
-                            [{isExpanded ? "Thu gọn" : "Xem thêm"}]
-                          </span>
-                        </td>
-                      );
-                    }
-
-                    return (
-                      <td key={i} style={{ padding: "8px", textAlign: "center" }}>
-                        {cell}
-                      </td>
-                    );
-                  })}
-                </tr>
-              );
-            })}
+                          {expandedRows[idx] ? "Thu gọn" : "Xem thêm"}
+                        </button>
+                      </span>
+                    ) : (
+                      cell
+                    )}
+                  </td>
+                ))}
+              </tr>
+            ))}
           </tbody>
         </table>
       )}
