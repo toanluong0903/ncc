@@ -1,333 +1,371 @@
-// pages/index.js
-import { useState, useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
-/**
- * ✅ Bản full 1 file:
- * - Cho phép bôi chọn & Ctrl/Cmd+C như site đối thủ (KHÔNG chặn selection)
- * - Ghi chú thu gọn, bấm [Xem thêm]/[Thu gọn]
- * - 3 nút GP / TEXT / HOME: chỉ thay Giá Bán & Giá Mua từ sheet tương ứng
- * - Không dùng custom “multi-select” nữa để việc copy theo trình duyệt là tự nhiên nhất
- */
+/** === CONFIG: CHỈ SỐ CÁC CỘT QUAN TRỌNG (nếu header đổi thứ tự, chỉnh 2 số này) === */
+const SITE_COL = 4;      // cột "Site"
+const STATUS_COL = 1;    // cột "Tình Trạng"
 
-function NoteCell({ text = "" }) {
-  const [open, setOpen] = useState(false);
-  const isLong = text && text.length > 120;
-  const shown = isLong && !open ? text.slice(0, 120) + "…" : text;
-
-  if (!text) return null;
-
-  return (
-    <div className={`note-cell ${open ? "expanded" : ""}`}>
-      {shown}
-      {isLong && (
-        <button
-          className="note-toggle"
-          onClick={(e) => {
-            e.stopPropagation();
-            setOpen((v) => !v);
-          }}
-          type="button"
-        >
-          {open ? "[Thu gọn]" : "[Xem thêm]"}
-        </button>
-      )}
-    </div>
-  );
+/** Chuẩn hoá domain để so khớp fuzzy */
+function norm(s = "") {
+  return String(s)
+    .toLowerCase()
+    .replace(/https?:\/\//g, "")
+    .replace(/^www\./, "")
+    .replace(/\/.*$/, "")
+    .trim();
 }
 
 export default function Home() {
   const [input, setInput] = useState("");
-  const [header, setHeader] = useState([]);
-  const [data, setData] = useState([]);
-  const [textData, setTextData] = useState([]);
-  const [homeData, setHomeData] = useState([]);
-  const [activeSheet, setActiveSheet] = useState("GP"); // GP | TEXT | HOME
-  const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState("");
+  const [header, setHeader] = useState([]);         // mảng tiêu đề cột
+  const [gp, setGp] = useState([]);                 // dữ liệu GP (mảng các hàng)
+  const [textData, setTextData] = useState([]);     // dữ liệu TEXT
+  const [homeData, setHomeData] = useState([]);     // dữ liệu HOME
+  const [active, setActive] = useState("GP");       // "GP" | "TEXT" | "HOME"
+  const [error, setError] = useState("");
 
-  async function handleSearch() {
-    setErr("");
-    setLoading(true);
+  /** --- Excel-like selection state --- */
+  const [anchor, setAnchor] = useState(null);       // {r,c} điểm neo
+  const [end, setEnd] = useState(null);             // {r,c} điểm cuối (khi kéo/Shift)
+  const [isDragging, setIsDragging] = useState(false);
+  const tableRef = useRef(null);
+
+  // range được chọn (nếu có)
+  const selectedRange = useMemo(() => {
+    if (!anchor || !end) return null;
+    const r1 = Math.min(anchor.r, end.r);
+    const c1 = Math.min(anchor.c, end.c);
+    const r2 = Math.max(anchor.r, end.r);
+    const c2 = Math.max(anchor.c, end.c);
+    return { r1, c1, r2, c2 };
+  }, [anchor, end]);
+
+  // dữ liệu sheet hiện tại
+  const rawSheet = active === "GP" ? gp : active === "TEXT" ? textData : homeData;
+
+  // map theo domain chuẩn hoá => row
+  const sheetMap = useMemo(() => {
+    const m = new Map();
+    rawSheet.forEach((row) => {
+      const site = row[SITE_COL];
+      const key = norm(site);
+      if (key) m.set(key, row);
+    });
+    return m;
+  }, [rawSheet]);
+
+  /** build rows hiển thị:
+   * - Dùng sheet đang chọn
+   * - Với TEXT/HOME: giữ nguyên (không map lại giá)
+   * - Append các domain không có dữ liệu ở cuối: "Không có dữ liệu"
+   */
+  const rows = useMemo(() => {
+    // danh sách domain nhập theo thứ tự
+    const inputs = input
+      .split(/[\n,]+/g)
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    // 1) Lấy dữ liệu có trong DB theo thứ tự inputs (nếu nhập rỗng => trả full sheet)
+    let haveRows = [];
+    if (inputs.length === 0) {
+      haveRows = [...rawSheet];
+    } else {
+      haveRows = inputs
+        .map((s) => {
+          const k = norm(s);
+          // match: chứa hoặc bằng
+          const exact = sheetMap.get(k);
+          if (exact) return exact;
+          // contains: duyệt map (ít domain => OK)
+          for (const [key, r] of sheetMap.entries()) {
+            if (key.includes(k) || k.includes(key)) return r;
+          }
+          return null;
+        })
+        .filter(Boolean);
+    }
+
+    // 2) Build set đã có
+    const haveSet = new Set(haveRows.map((r) => norm(r[SITE_COL])));
+
+    // 3) Tìm các domain không có
+    const missing = inputs
+      .map(norm)
+      .filter(Boolean)
+      .filter((k) => !haveSet.has(k));
+
+    // 4) Append hàng "Không có dữ liệu"
+    const appended = [...haveRows];
+    missing.forEach((k) => {
+      const siteText = k;
+      const row = new Array(Math.max(header.length, 18)).fill("");
+      row[STATUS_COL] = "Không có dữ liệu";
+      row[SITE_COL] = siteText;
+      appended.push(row);
+    });
+
+    return appended;
+  }, [input, rawSheet, sheetMap, header]);
+
+  /** FETCH */
+  const handleSearch = async () => {
+    setError("");
     try {
-      const qs = encodeURIComponent(input.trim());
-      const res = await fetch(`/api/check?keyword=${qs}`);
+      const res = await fetch(`/api/check?keyword=${encodeURIComponent(input)}`);
       const json = await res.json();
-
-      if (!res.ok) throw new Error(json?.message || "Lỗi tải dữ liệu");
-
-      // backend trả: { header, results, textData, homeData }
+      if (!json || !json.results) {
+        setError(json?.message || "Không tìm thấy");
+        setHeader([]);
+        setGp([]);
+        setTextData([]);
+        setHomeData([]);
+        return;
+      }
       setHeader(json.header || []);
-      setData(json.results || []);
+      setGp(json.results || []);
       setTextData(json.textData || []);
       setHomeData(json.homeData || []);
     } catch (e) {
-      setErr(e.message || "Lỗi server");
-    } finally {
-      setLoading(false);
+      setError("Lỗi server");
     }
-  }
+  };
 
-  // map sheet phụ theo Site để lấy giá nhanh
-  const mapText = useMemo(() => {
-    const m = new Map();
-    for (const r of textData || []) {
-      // site ở cột 4 (index 4) theo format cũ
-      m.set(String(r[4] || "").trim(), r);
+  /** === Excel-like copy: Ctrl/Cmd + C === */
+  useEffect(() => {
+    function onKey(e) {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      if (e.key.toLowerCase() !== "c") return;
+
+      // nếu có vùng chọn => copy vùng chọn
+      if (selectedRange && rows.length) {
+        e.preventDefault();
+        const { r1, c1, r2, c2 } = selectedRange;
+        const parts = [];
+        for (let r = r1; r <= r2; r++) {
+          const row = rows[r] || [];
+          const line = [];
+          for (let c = c1; c <= c2; c++) {
+            let cell = row[c] ?? "";
+            // bỏ HTML trong ô (nếu có)
+            if (typeof cell === "string") {
+              cell = cell.replace(/<[^>]+>/g, "");
+            }
+            line.push(String(cell));
+          }
+          parts.push(line.join("\t"));
+        }
+        const text = parts.join("\n");
+        navigator.clipboard.writeText(text);
+        return;
+      }
+      // nếu không có vùng chọn mà đang focus ở table: cho phép copy browser default
     }
-    return m;
-  }, [textData]);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selectedRange, rows]);
 
-  const mapHome = useMemo(() => {
-    const m = new Map();
-    for (const r of homeData || []) {
-      m.set(String(r[4] || "").trim(), r);
+  /** Mouse handlers cho selection */
+  const handleMouseDown = (r, c) => {
+    setAnchor({ r, c });
+    setEnd({ r, c });
+    setIsDragging(true);
+  };
+  const handleMouseEnter = (r, c) => {
+    if (!isDragging) return;
+    setEnd({ r, c });
+  };
+  const handleMouseUp = () => setIsDragging(false);
+
+  // Shift-click: mở rộng từ anchor
+  const handleCellClick = (e, r, c) => {
+    if (e.shiftKey && anchor) {
+      setEnd({ r, c });
+    } else {
+      setAnchor({ r, c });
+      setEnd({ r, c });
     }
-    return m;
-  }, [homeData]);
+  };
 
-  // Trộn giá theo sheet đang chọn
-  const displayRows = useMemo(() => {
-    if (activeSheet === "GP") return data;
+  // copy nhanh 1 ô
+  const copyCell = (text) => {
+    const t = String(text ?? "").replace(/<[^>]+>/g, "");
+    if (!t) return;
+    navigator.clipboard.writeText(t);
+  };
 
-    const sourceMap = activeSheet === "TEXT" ? mapText : mapHome;
-    return (data || []).map((row) => {
-      const site = String(row[4] || "").trim();
-      const matched = sourceMap.get(site);
-      if (!matched) return row;
-      const clone = [...row];
-      // cột 9: Giá Bán, cột 10: Giá Mua (theo format cũ bạn đang dùng)
-      clone[9] = matched[9] ?? clone[9];
-      clone[10] = matched[10] ?? clone[10];
-      return clone;
-    });
-  }, [data, activeSheet, mapText, mapHome]);
+  /** Ghi chú thu gọn */
+  const renderNote = (val) => {
+    const [open, setOpen] = useState(false);
+    if (!val) return "";
+    const short = String(val).slice(0, 80);
+    return (
+      <span style={{ whiteSpace: "nowrap" }}>
+        {open ? String(val) : short}
+        {String(val).length > 80 && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setOpen((s) => !s);
+            }}
+            style={{
+              marginLeft: 6,
+              border: "none",
+              background: "transparent",
+              color: "#0b5ed7",
+              cursor: "pointer",
+              textDecoration: "underline",
+            }}
+          >
+            {open ? "Thu gọn" : "[Xem thêm]"}
+          </button>
+        )}
+      </span>
+    );
+  };
+
+  /** render cell với selection highlight */
+  const isSelected = (r, c) => {
+    if (!selectedRange) return false;
+    const { r1, c1, r2, c2 } = selectedRange;
+    return r >= r1 && r <= r2 && c >= c1 && c <= c2;
+  };
 
   return (
-    <div className="page">
+    <div style={{ padding: 20, fontFamily: "Inter, Arial, sans-serif" }}>
       <h2>Tool Check Site (Demo)</h2>
 
       <textarea
-        rows={4}
-        className="input"
+        rows={8}
+        style={{ width: 700, maxWidth: "100%", padding: 10, borderRadius: 6, border: "1px solid #ccc" }}
         placeholder="Nhập site hoặc mã (mỗi dòng 1 giá trị)"
         value={input}
         onChange={(e) => setInput(e.target.value)}
       />
 
-      <div className="actions">
-        <button className="btn primary" onClick={handleSearch} disabled={loading}>
-          {loading ? "Đang tìm..." : "🔍 Tìm kiếm"}
+      <div style={{ marginTop: 10, display: "flex", gap: 8, alignItems: "center" }}>
+        <button
+          onClick={handleSearch}
+          style={{
+            padding: "9px 18px",
+            background: "#2E8B57",
+            color: "#fff",
+            border: 0,
+            borderRadius: 6,
+            fontWeight: 600,
+            cursor: "pointer",
+          }}
+        >
+          🔎 Tìm kiếm
         </button>
 
-        {!!data.length && (
-          <div className="sheet-switch">
-            <button
-              className={`tab ${activeSheet === "GP" ? "active" : ""}`}
-              onClick={() => setActiveSheet("GP")}
-              type="button"
-            >
-              GP
-            </button>
-            <button
-              className={`tab ${activeSheet === "TEXT" ? "active" : ""}`}
-              onClick={() => setActiveSheet("TEXT")}
-              type="button"
-            >
-              TEXT
-            </button>
-            <button
-              className={`tab ${activeSheet === "HOME" ? "active" : ""}`}
-              onClick={() => setActiveSheet("HOME")}
-              type="button"
-            >
-              HOME
-            </button>
-          </div>
-        )}
+        {["GP", "TEXT", "HOME"].map((k) => (
+          <button
+            key={k}
+            onClick={() => {
+              setActive(k);
+              // reset selection khi đổi sheet
+              setAnchor(null);
+              setEnd(null);
+            }}
+            style={{
+              padding: "8px 14px",
+              borderRadius: 6,
+              border: "1px solid #ccc",
+              background: active === k ? "#0d6efd" : "#fff",
+              color: active === k ? "#fff" : "#333",
+              fontWeight: 600,
+              cursor: "pointer",
+            }}
+          >
+            {k}
+          </button>
+        ))}
       </div>
 
-      {err && <div className="error">⚠️ {err}</div>}
+      {error && <p style={{ color: "red", marginTop: 10 }}>{error}</p>}
 
-      {!!displayRows.length && (
-        <div className="results-wrap">
-          <table className="table">
-            <thead>
-              <tr>
-                {header.map((h, i) => (
-                  <th key={i}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {displayRows.map((row, rIdx) => (
-                <tr key={rIdx}>
-                  {row.map((cell, cIdx) => {
-                    const isNote =
-                      (header[cIdx] || "").toLowerCase().includes("ghi chú") ||
-                      (header[cIdx] || "").toLowerCase().includes("ghi chu");
-                    return (
-                      <td key={cIdx}>
-                        {isNote ? <NoteCell text={String(cell ?? "")} /> : String(cell ?? "")}
-                      </td>
-                    );
-                  })}
+      {rows.length > 0 && (
+        <>
+          <div style={{ marginTop: 8, color: "#666", fontSize: 13 }}>
+            💡 Mẹo: Kéo chuột để quét vùng ⇒ nhấn <b>Ctrl/Cmd + C</b> để copy. Double-click để copy 1 ô.
+          </div>
+
+          <div
+            ref={tableRef}
+            onMouseLeave={() => setIsDragging(false)}
+            onMouseUp={handleMouseUp}
+            style={{
+              marginTop: 10,
+              overflow: "auto",
+              borderRadius: 8,
+              border: "1px solid #e5e7eb",
+              boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
+            }}
+          >
+            <table style={{ borderCollapse: "collapse", width: "100%", background: "#fff" }}>
+              <thead>
+                <tr>
+                  {header.map((h, i) => (
+                    <th
+                      key={i}
+                      style={{
+                        position: "sticky",
+                        top: 0,
+                        background: "#f8fafc",
+                        borderBottom: "1px solid #e5e7eb",
+                        padding: "10px 8px",
+                        fontWeight: 700,
+                        textAlign: "center",
+                        fontSize: 13,
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {h}
+                    </th>
+                  ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
 
-          <p className="hint">
-            💡 Mẹo: Kéo bôi ô bất kỳ rồi <b>Ctrl/Cmd + C</b> để copy, dán thẳng vào Excel/Sheets.
-          </p>
-        </div>
+              <tbody>
+                {rows.map((row, r) => (
+                  <tr key={r} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                    {row.map((cell, c) => {
+                      const sel = isSelected(r, c);
+                      const isNoteCol = header[c]?.toLowerCase().includes("ghi chú");
+                      const value = isNoteCol ? renderNote(cell) : cell;
+
+                      const isNoData = row[STATUS_COL] === "Không có dữ liệu";
+                      return (
+                        <td
+                          key={c}
+                          onMouseDown={() => handleMouseDown(r, c)}
+                          onMouseEnter={() => handleMouseEnter(r, c)}
+                          onClick={(e) => handleCellClick(e, r, c)}
+                          onDoubleClick={() => copyCell(cell)}
+                          style={{
+                            padding: "8px 10px",
+                            textAlign: "center",
+                            cursor: "cell",
+                            userSelect: "none",
+                            background: sel ? "#cfe8ff" : isNoData ? "#f6f7f9" : "transparent",
+                            color: isNoData ? "#8a8f98" : "#111827",
+                            borderLeft: "1px solid #f1f5f9",
+                            borderRight: "1px solid #f1f5f9",
+                            whiteSpace: "nowrap",
+                          }}
+                          title={typeof cell === "string" ? cell.replace(/<[^>]+>/g, "") : ""}
+                        >
+                          {value}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
-
-      {/* Styles */}
-      <style jsx>{`
-        .page {
-          min-height: 100vh;
-          padding: 24px;
-          font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-          background: #fafafa;
-        }
-        h2 {
-          margin: 0 0 12px;
-        }
-        .input {
-          width: 100%;
-          max-width: 760px;
-          border: 1px solid #dcdcdc;
-          border-radius: 8px;
-          padding: 10px 12px;
-          background: #fff;
-          font-size: 14px;
-          outline: none;
-        }
-        .input:focus {
-          border-color: #4096ff;
-          box-shadow: 0 0 0 3px rgba(64, 150, 255, 0.15);
-        }
-        .actions {
-          margin: 10px 0 6px;
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          flex-wrap: wrap;
-        }
-        .btn {
-          border: 1px solid #dcdcdc;
-          background: #fff;
-          height: 36px;
-          padding: 0 14px;
-          border-radius: 8px;
-          cursor: pointer;
-          font-weight: 600;
-        }
-        .btn.primary {
-          background: #2e8b57;
-          border-color: #2e8b57;
-          color: #fff;
-        }
-        .btn:disabled {
-          opacity: 0.6;
-          cursor: default;
-        }
-        .sheet-switch {
-          display: inline-flex;
-          gap: 8px;
-          margin-left: 6px;
-        }
-        .sheet-switch .tab {
-          border: 1px solid #dcdcdc;
-          background: #fff;
-          border-radius: 6px;
-          height: 32px;
-          padding: 0 12px;
-          font-weight: 600;
-          cursor: pointer;
-        }
-        .sheet-switch .tab.active {
-          background: #175fe6;
-          color: #fff;
-          border-color: #175fe6;
-        }
-        .error {
-          margin-top: 6px;
-          color: #c62828;
-          font-weight: 600;
-        }
-        .results-wrap {
-          margin-top: 14px;
-          background: #fff;
-          border: 1px solid #e9e9e9;
-          border-radius: 10px;
-          box-shadow: 0 8px 24px rgba(0, 0, 0, 0.04);
-          overflow: hidden;
-        }
-        .table {
-          width: 100%;
-          border-collapse: collapse;
-          font-size: 14px;
-        }
-        thead th {
-          position: sticky;
-          top: 0;
-          z-index: 1;
-          background: #f7f9fc;
-          text-align: left;
-          font-weight: 700;
-          border-bottom: 1px solid #ececec;
-          padding: 10px;
-          white-space: nowrap;
-        }
-        tbody td {
-          border-bottom: 1px solid #f3f3f3;
-          padding: 8px 10px;
-          vertical-align: top;
-          background: #fff;
-        }
-
-        /* ✅ CHO PHÉP CHỌN & COPY TRÊN BẢNG */
-        .results-wrap,
-        .results-wrap table,
-        .results-wrap td,
-        .results-wrap th {
-          -webkit-user-select: text !important;
-          -moz-user-select: text !important;
-          -ms-user-select: text !important;
-          user-select: text !important;
-          cursor: text;
-        }
-        /* Không cần chọn chữ ở nút */
-        .note-toggle {
-          user-select: none !important;
-          cursor: pointer;
-          border: none;
-          background: none;
-          color: #175fe6;
-          margin-left: 6px;
-          padding: 0;
-        }
-
-        /* Ghi chú thu gọn / mở rộng */
-        .note-cell {
-          max-width: 520px; /* chỉnh theo UI */
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-          line-height: 1.4;
-        }
-        .note-cell.expanded {
-          white-space: normal;
-          overflow: visible;
-        }
-
-        .hint {
-          margin: 10px;
-          color: #6b7280;
-          font-size: 13px;
-        }
-      `}</style>
     </div>
   );
 }
