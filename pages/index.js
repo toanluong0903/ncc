@@ -1,370 +1,496 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+// pages/index.js
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-/** === CONFIG: CHỈ SỐ CÁC CỘT QUAN TRỌNG (nếu header đổi thứ tự, chỉnh 2 số này) === */
-const SITE_COL = 4;      // cột "Site"
-const STATUS_COL = 1;    // cột "Tình Trạng"
+/** ======= Cấu trúc cột trả về (0-based) =======
+ * 0: CS | 1: Tình Trạng | 2: Bóng | 3: BET | 4: Site
+ * 5: Chủ đề | 6: DR | 7: Traffic | 8: Ghi Chú
+ * 9: Giá Bán | 10: Giá Mua | 11: HH | 12: Giá Cuối
+ * 13: LN | 14: Time | 15: Tên | 16: Mã
+ */
+const COL = {
+  STATUS: 1,
+  SITE: 4,
+  NOTE: 8,
+  SELL: 9,
+  BUY: 10,
+};
 
-/** Chuẩn hoá domain để so khớp fuzzy */
-function norm(s = "") {
-  return String(s)
+// === Helpers: normalize & fuzzy-contains ===
+const normalize = (s = "") =>
+  String(s)
     .toLowerCase()
-    .replace(/https?:\/\//g, "")
+    .trim()
+    .replace(/^https?:\/\//, "")
     .replace(/^www\./, "")
-    .replace(/\/.*$/, "")
-    .trim();
-}
+    .replace(/\/+$/, "");
+
+const containsSite = (haystack, needle) =>
+  normalize(haystack).includes(normalize(needle));
 
 export default function Home() {
   const [input, setInput] = useState("");
-  const [header, setHeader] = useState([]);         // mảng tiêu đề cột
-  const [gp, setGp] = useState([]);                 // dữ liệu GP (mảng các hàng)
-  const [textData, setTextData] = useState([]);     // dữ liệu TEXT
-  const [homeData, setHomeData] = useState([]);     // dữ liệu HOME
-  const [active, setActive] = useState("GP");       // "GP" | "TEXT" | "HOME"
+  const [activeSheet, setActiveSheet] = useState("GP"); // GP | TEXT | HOME
+
+  const [header, setHeader] = useState([]);
+  const [gpRows, setGpRows] = useState([]); // rows (array of array)
+  const [textRows, setTextRows] = useState([]);
+  const [homeRows, setHomeRows] = useState([]);
   const [error, setError] = useState("");
 
-  /** --- Excel-like selection state --- */
-  const [anchor, setAnchor] = useState(null);       // {r,c} điểm neo
-  const [end, setEnd] = useState(null);             // {r,c} điểm cuối (khi kéo/Shift)
-  const [isDragging, setIsDragging] = useState(false);
+  // Collapse/Expand NOTE theo index hàng
+  const [noteOpen, setNoteOpen] = useState(() => new Set());
+  const toggleNote = useCallback((rowIdx) => {
+    setNoteOpen((s) => {
+      const ns = new Set(s);
+      ns.has(rowIdx) ? ns.delete(rowIdx) : ns.add(rowIdx);
+      return ns;
+    });
+  }, []);
+
+  // ===== Selection nâng cao (giống đối thủ) =====
   const tableRef = useRef(null);
 
-  // range được chọn (nếu có)
-  const selectedRange = useMemo(() => {
-    if (!anchor || !end) return null;
-    const r1 = Math.min(anchor.r, end.r);
-    const c1 = Math.min(anchor.c, end.c);
-    const r2 = Math.max(anchor.r, end.r);
-    const c2 = Math.max(anchor.c, end.c);
-    return { r1, c1, r2, c2 };
-  }, [anchor, end]);
+  // “Neo” để Shift chọn vùng
+  const [anchor, setAnchor] = useState(null); // {r,c} hoặc null
+  // Tập ô đã chọn (rời rạc) – dùng Set("r,c")
+  const [selected, setSelected] = useState(new Set());
+  // Trạng thái kéo chuột
+  const dragModeRef = useRef({ dragging: false, add: false }); // add = ctrl/meta để cộng dồn
 
-  // dữ liệu sheet hiện tại
-  const rawSheet = active === "GP" ? gp : active === "TEXT" ? textData : homeData;
+  // Tạo key cho ô
+  const keyOf = (r, c) => `${r},${c}`;
+  const parseKey = (k) => k.split(",").map((n) => parseInt(n, 10));
 
-  // map theo domain chuẩn hoá => row
-  const sheetMap = useMemo(() => {
-    const m = new Map();
-    rawSheet.forEach((row) => {
-      const site = row[SITE_COL];
-      const key = norm(site);
-      if (key) m.set(key, row);
-    });
-    return m;
-  }, [rawSheet]);
-
-  /** build rows hiển thị:
-   * - Dùng sheet đang chọn
-   * - Với TEXT/HOME: giữ nguyên (không map lại giá)
-   * - Append các domain không có dữ liệu ở cuối: "Không có dữ liệu"
-   */
-  const rows = useMemo(() => {
-    // danh sách domain nhập theo thứ tự
-    const inputs = input
-      .split(/[\n,]+/g)
-      .map((s) => s.trim())
-      .filter(Boolean);
-
-    // 1) Lấy dữ liệu có trong DB theo thứ tự inputs (nếu nhập rỗng => trả full sheet)
-    let haveRows = [];
-    if (inputs.length === 0) {
-      haveRows = [...rawSheet];
-    } else {
-      haveRows = inputs
-        .map((s) => {
-          const k = norm(s);
-          // match: chứa hoặc bằng
-          const exact = sheetMap.get(k);
-          if (exact) return exact;
-          // contains: duyệt map (ít domain => OK)
-          for (const [key, r] of sheetMap.entries()) {
-            if (key.includes(k) || k.includes(key)) return r;
-          }
-          return null;
-        })
-        .filter(Boolean);
+  // Lấy vùng hình chữ nhật giữa (r1,c1) -> (r2,c2)
+  const rectCells = (r1, c1, r2, c2) => {
+    const out = [];
+    const rr1 = Math.min(r1, r2);
+    const rr2 = Math.max(r1, r2);
+    const cc1 = Math.min(c1, c2);
+    const cc2 = Math.max(c1, c2);
+    for (let r = rr1; r <= rr2; r++) {
+      for (let c = cc1; c <= cc2; c++) {
+        out.push(keyOf(r, c));
+      }
     }
+    return out;
+  };
 
-    // 2) Build set đã có
-    const haveSet = new Set(haveRows.map((r) => norm(r[SITE_COL])));
-
-    // 3) Tìm các domain không có
-    const missing = inputs
-      .map(norm)
-      .filter(Boolean)
-      .filter((k) => !haveSet.has(k));
-
-    // 4) Append hàng "Không có dữ liệu"
-    const appended = [...haveRows];
-    missing.forEach((k) => {
-      const siteText = k;
-      const row = new Array(Math.max(header.length, 18)).fill("");
-      row[STATUS_COL] = "Không có dữ liệu";
-      row[SITE_COL] = siteText;
-      appended.push(row);
+  // Thêm/bỏ chọn 1 ô
+  const toggleCell = (r, c) => {
+    setSelected((s) => {
+      const ns = new Set(s);
+      const k = keyOf(r, c);
+      ns.has(k) ? ns.delete(k) : ns.add(k);
+      return ns;
     });
+  };
 
-    return appended;
-  }, [input, rawSheet, sheetMap, header]);
+  // Chọn 1 vùng (replace hay add)
+  const applyRect = (r1, c1, r2, c2, add = false) => {
+    const ks = rectCells(r1, c1, r2, c2);
+    setSelected((s) => {
+      if (add) {
+        const ns = new Set(s);
+        ks.forEach((k) => ns.add(k));
+        return ns;
+      }
+      return new Set(ks);
+    });
+  };
 
-  /** FETCH */
+  // Click/Drag chọn
+  const onCellMouseDown = (e, r, c) => {
+    const add = e.ctrlKey || e.metaKey;
+    dragModeRef.current = { dragging: true, add };
+    setAnchor({ r, c });
+
+    if (add) {
+      // Ctrl/⌘ + click: toggle ô
+      toggleCell(r, c);
+    } else if (e.shiftKey && anchor) {
+      // Shift + click: vùng từ neo -> (r,c). Nếu có Ctrl/⌘ + Shift thì add
+      applyRect(anchor.r, anchor.c, r, c, add);
+    } else {
+      // click thường: replace bằng 1 ô
+      setSelected(new Set([keyOf(r, c)]));
+    }
+  };
+
+  const onCellMouseEnter = (e, r, c) => {
+    if (!dragModeRef.current.dragging || !anchor) return;
+    // đang kéo: cứ vẽ vùng (add hoặc replace tuỳ ctrl/meta)
+    applyRect(anchor.r, anchor.c, r, c, dragModeRef.current.add);
+  };
+
+  const onMouseUpGlobal = () => {
+    dragModeRef.current.dragging = false;
+  };
+
+  // Keyboard hỗ trợ
+  useEffect(() => {
+    const onKey = (e) => {
+      // Esc xoá selection
+      if (e.key === "Escape") {
+        setSelected(new Set());
+        setAnchor(null);
+        return;
+      }
+
+      // Copy nếu có selection
+      const isCopy = (e.ctrlKey || e.metaKey) && (e.key === "c" || e.key === "C");
+      if (!isCopy || selected.size === 0) return;
+
+      // Chuẩn TSV từ selected (theo thứ tự hàng/ cột tăng dần)
+      const byRow = new Map(); // r -> Set(cols)
+      let minR = Infinity,
+        maxR = -Infinity;
+      for (const k of selected) {
+        const [r, c] = parseKey(k);
+        minR = Math.min(minR, r);
+        maxR = Math.max(maxR, r);
+        if (!byRow.has(r)) byRow.set(r, new Set());
+        byRow.get(r).add(c);
+      }
+      const lines = [];
+      for (let r = minR; r <= maxR; r++) {
+        const cols = [...(byRow.get(r) || [])].sort((a, b) => a - b);
+        const vals = cols.map((c) => currentRows[r]?.[c] ?? "");
+        lines.push(vals.join("\t"));
+      }
+      const text = lines.join("\n");
+      navigator.clipboard.writeText(text);
+
+      // feedback nhẹ
+      if (tableRef.current) {
+        tableRef.current.style.boxShadow = "0 0 0 2px #3b82f6 inset";
+        setTimeout(() => {
+          if (tableRef.current) tableRef.current.style.boxShadow = "none";
+        }, 200);
+      }
+    };
+
+    const onUp = () => onMouseUpGlobal();
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("mouseup", onUp);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("mouseup", onUp);
+    };
+  }, [selected]); // eslint-disable-line
+
+  // Double click: copy 1 ô
+  const handleDoubleClickCopy = (val) => {
+    navigator.clipboard.writeText(String(val ?? ""));
+  };
+
+  // ===== Map TEXT/HOME sang GP theo fuzzy site =====
+  const currentRows = useMemo(() => {
+    let out = gpRows.map((r) => [...r]);
+
+    if (activeSheet === "TEXT" || activeSheet === "HOME") {
+      const override = activeSheet === "TEXT" ? textRows : homeRows;
+      const priceMap = new Map(); // normSite -> {sell, buy}
+
+      for (const row of override) {
+        const s = row[COL.SITE];
+        if (!s) continue;
+        priceMap.set(normalize(s), {
+          sell: row[COL.SELL] ?? "",
+          buy: row[COL.BUY] ?? "",
+        });
+      }
+
+      out = out.map((row) => {
+        const site = normalize(row[COL.SITE] || "");
+        for (const [k, price] of priceMap) {
+          if (site.includes(k)) {
+            row[COL.SELL] = price.sell ?? "";
+            row[COL.BUY] = price.buy ?? "";
+            break;
+          }
+        }
+        return row;
+      });
+    }
+    return out;
+  }, [gpRows, textRows, homeRows, activeSheet]);
+
+  // ===== Tìm kiếm =====
   const handleSearch = async () => {
     setError("");
+    setSelected(new Set());
+    setAnchor(null);
+    setNoteOpen(new Set());
+
     try {
       const res = await fetch(`/api/check?keyword=${encodeURIComponent(input)}`);
       const json = await res.json();
-      if (!json || !json.results) {
-        setError(json?.message || "Không tìm thấy");
-        setHeader([]);
-        setGp([]);
-        setTextData([]);
-        setHomeData([]);
+
+      if (!json || (!json.results && !json.header)) {
+        setError(json?.message || "Lỗi dữ liệu.");
         return;
       }
-      setHeader(json.header || []);
-      setGp(json.results || []);
-      setTextData(json.textData || []);
-      setHomeData(json.homeData || []);
-    } catch (e) {
-      setError("Lỗi server");
-    }
-  };
 
-  /** === Excel-like copy: Ctrl/Cmd + C === */
-  useEffect(() => {
-    function onKey(e) {
-      if (!(e.ctrlKey || e.metaKey)) return;
-      if (e.key.toLowerCase() !== "c") return;
+      const _header = json.header || [];
+      const _gp = Array.isArray(json.results) ? json.results : [];
+      const _text = Array.isArray(json.textData) ? json.textData : [];
+      const _home = Array.isArray(json.homeData) ? json.homeData : [];
 
-      // nếu có vùng chọn => copy vùng chọn
-      if (selectedRange && rows.length) {
-        e.preventDefault();
-        const { r1, c1, r2, c2 } = selectedRange;
-        const parts = [];
-        for (let r = r1; r <= r2; r++) {
-          const row = rows[r] || [];
-          const line = [];
-          for (let c = c1; c <= c2; c++) {
-            let cell = row[c] ?? "";
-            // bỏ HTML trong ô (nếu có)
-            if (typeof cell === "string") {
-              cell = cell.replace(/<[^>]+>/g, "");
-            }
-            line.push(String(cell));
-          }
-          parts.push(line.join("\t"));
+      // domain người dùng nhập
+      const wanted = Array.from(
+        new Set(
+          input
+            .split(/\r?\n|,/)
+            .map((s) => s.trim())
+            .filter(Boolean)
+        )
+      );
+
+      // những site có trong GP
+      const seen = new Set();
+      _gp.forEach((row) => {
+        const s = row[COL.SITE];
+        if (s) seen.add(normalize(s));
+      });
+
+      // thiếu -> đẩy xuống cuối, Tình Trạng = "Không có dữ liệu"
+      const missingRows = [];
+      for (const site of wanted) {
+        const normQ = normalize(site);
+        const has = [...seen].some((s) => s.includes(normQ) || normQ.includes(s));
+        if (!has) {
+          const blank = Array(_header.length).fill("");
+          blank[COL.STATUS] = "Không có dữ liệu";
+          blank[COL.SITE] = site;
+          missingRows.push(blank);
         }
-        const text = parts.join("\n");
-        navigator.clipboard.writeText(text);
-        return;
       }
-      // nếu không có vùng chọn mà đang focus ở table: cho phép copy browser default
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [selectedRange, rows]);
 
-  /** Mouse handlers cho selection */
-  const handleMouseDown = (r, c) => {
-    setAnchor({ r, c });
-    setEnd({ r, c });
-    setIsDragging(true);
-  };
-  const handleMouseEnter = (r, c) => {
-    if (!isDragging) return;
-    setEnd({ r, c });
-  };
-  const handleMouseUp = () => setIsDragging(false);
-
-  // Shift-click: mở rộng từ anchor
-  const handleCellClick = (e, r, c) => {
-    if (e.shiftKey && anchor) {
-      setEnd({ r, c });
-    } else {
-      setAnchor({ r, c });
-      setEnd({ r, c });
+      setHeader(_header);
+      setGpRows([..._gp, ...missingRows]);
+      setTextRows(_text);
+      setHomeRows(_home);
+    } catch (e) {
+      setError("Lỗi server.");
     }
   };
 
-  // copy nhanh 1 ô
-  const copyCell = (text) => {
-    const t = String(text ?? "").replace(/<[^>]+>/g, "");
-    if (!t) return;
-    navigator.clipboard.writeText(t);
-  };
-
-  /** Ghi chú thu gọn */
-  const renderNote = (val) => {
-    const [open, setOpen] = useState(false);
-    if (!val) return "";
-    const short = String(val).slice(0, 80);
-    return (
-      <span style={{ whiteSpace: "nowrap" }}>
-        {open ? String(val) : short}
-        {String(val).length > 80 && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setOpen((s) => !s);
-            }}
-            style={{
-              marginLeft: 6,
-              border: "none",
-              background: "transparent",
-              color: "#0b5ed7",
-              cursor: "pointer",
-              textDecoration: "underline",
-            }}
-          >
-            {open ? "Thu gọn" : "[Xem thêm]"}
-          </button>
-        )}
-      </span>
-    );
-  };
-
-  /** render cell với selection highlight */
-  const isSelected = (r, c) => {
-    if (!selectedRange) return false;
-    const { r1, c1, r2, c2 } = selectedRange;
-    return r >= r1 && r <= r2 && c >= c1 && c <= c2;
-  };
+  // ======= UI =======
+  const isCellSelected = useCallback(
+    (r, c) => selected.has(keyOf(r, c)),
+    [selected]
+  );
 
   return (
-    <div style={{ padding: 20, fontFamily: "Inter, Arial, sans-serif" }}>
-      <h2>Tool Check Site (Demo)</h2>
+    <div
+      style={{
+        padding: 20,
+        minHeight: "100vh",
+        background: "#fafafa",
+        fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial",
+      }}
+    >
+      <h2 style={{ marginBottom: 12 }}>Tool Check Site (Demo)</h2>
 
       <textarea
-        rows={8}
-        style={{ width: 700, maxWidth: "100%", padding: 10, borderRadius: 6, border: "1px solid #ccc" }}
-        placeholder="Nhập site hoặc mã (mỗi dòng 1 giá trị)"
+        rows={10}
+        style={{
+          width: 700,
+          maxWidth: "100%",
+          padding: 10,
+          borderRadius: 8,
+          border: "1px solid #ddd",
+          outline: "none",
+          background: "#fff",
+        }}
+        placeholder="Nhập site hoặc mã (mỗi dòng 1 giá trị, hoặc phân tách bằng dấu phẩy)"
         value={input}
         onChange={(e) => setInput(e.target.value)}
       />
 
-      <div style={{ marginTop: 10, display: "flex", gap: 8, alignItems: "center" }}>
+      <div style={{ marginTop: 10 }}>
         <button
           onClick={handleSearch}
           style={{
-            padding: "9px 18px",
-            background: "#2E8B57",
+            padding: "10px 22px",
+            background: "#2e7d32",
             color: "#fff",
-            border: 0,
-            borderRadius: 6,
-            fontWeight: 600,
+            border: "none",
+            borderRadius: 8,
             cursor: "pointer",
+            fontWeight: 600,
           }}
         >
-          🔎 Tìm kiếm
+          🔍 Tìm kiếm
         </button>
-
-        {["GP", "TEXT", "HOME"].map((k) => (
-          <button
-            key={k}
-            onClick={() => {
-              setActive(k);
-              // reset selection khi đổi sheet
-              setAnchor(null);
-              setEnd(null);
-            }}
-            style={{
-              padding: "8px 14px",
-              borderRadius: 6,
-              border: "1px solid #ccc",
-              background: active === k ? "#0d6efd" : "#fff",
-              color: active === k ? "#fff" : "#333",
-              fontWeight: 600,
-              cursor: "pointer",
-            }}
-          >
-            {k}
-          </button>
-        ))}
       </div>
 
-      {error && <p style={{ color: "red", marginTop: 10 }}>{error}</p>}
+      {error && (
+        <div style={{ color: "red", marginTop: 10, fontWeight: 600 }}>{error}</div>
+      )}
 
-      {rows.length > 0 && (
-        <>
-          <div style={{ marginTop: 8, color: "#666", fontSize: 13 }}>
-            💡 Mẹo: Kéo chuột để quét vùng ⇒ nhấn <b>Ctrl/Cmd + C</b> để copy. Double-click để copy 1 ô.
-          </div>
+      {/* Tabs GP/TEXT/HOME */}
+      {currentRows.length > 0 && (
+        <div style={{ marginTop: 16 }}>
+          {["GP", "TEXT", "HOME"].map((t) => (
+            <button
+              key={t}
+              onClick={() => setActiveSheet(t)}
+              style={{
+                marginRight: 10,
+                padding: "8px 16px",
+                borderRadius: 6,
+                border: "1px solid #ddd",
+                background: activeSheet === t ? "#eef2ff" : "#fff",
+                cursor: "pointer",
+                fontWeight: 600,
+              }}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+      )}
 
-          <div
-            ref={tableRef}
-            onMouseLeave={() => setIsDragging(false)}
-            onMouseUp={handleMouseUp}
+      {/* Hint copy */}
+      {currentRows.length > 0 && (
+        <div style={{ marginTop: 12, color: "#555", lineHeight: 1.5 }}>
+          💡 Chọn ô như Excel:
+          <ul style={{ margin: "6px 0 0 18px" }}>
+            <li>Kéo bôi 1 vùng rồi bấm <b>Ctrl/Cmd + C</b> để copy.</li>
+            <li><b>Ctrl/Cmd + click</b> để chọn nhiều ô rời rạc.</li>
+            <li><b>Shift + click</b> để chọn vùng từ ô neo tới ô hiện tại.</li>
+            <li><b>Double-click</b> 1 ô để copy nhanh ô đó. Nhấn <b>Esc</b> để bỏ chọn.</li>
+          </ul>
+        </div>
+      )}
+
+      {/* Table */}
+      {currentRows.length > 0 && (
+        <div
+          ref={tableRef}
+          style={{
+            marginTop: 16,
+            overflowX: "auto",
+            borderRadius: 8,
+            border: "1px solid #e5e7eb",
+            background: "#fff",
+          }}
+        >
+          <table
             style={{
-              marginTop: 10,
-              overflow: "auto",
-              borderRadius: 8,
-              border: "1px solid #e5e7eb",
-              boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
+              borderCollapse: "collapse",
+              width: "100%",
+              fontSize: 14,
             }}
           >
-            <table style={{ borderCollapse: "collapse", width: "100%", background: "#fff" }}>
-              <thead>
-                <tr>
-                  {header.map((h, i) => (
-                    <th
-                      key={i}
-                      style={{
-                        position: "sticky",
-                        top: 0,
-                        background: "#f8fafc",
-                        borderBottom: "1px solid #e5e7eb",
-                        padding: "10px 8px",
-                        fontWeight: 700,
-                        textAlign: "center",
-                        fontSize: 13,
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
+            <thead>
+              <tr>
+                {header.map((h, i) => (
+                  <th
+                    key={i}
+                    style={{
+                      position: "sticky",
+                      top: 0,
+                      background: "#f8fafc",
+                      borderBottom: "2px solid #e5e7eb",
+                      padding: "10px 8px",
+                      textAlign: "left",
+                      fontWeight: 700,
+                      color: "#374151",
+                      whiteSpace: "nowrap",
+                      zIndex: 2,
+                    }}
+                  >
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {currentRows.map((row, rIdx) => (
+                <tr key={rIdx} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                  {row.map((cell, cIdx) => {
+                    const selectedCell = isCellSelected(rIdx, cIdx);
 
-              <tbody>
-                {rows.map((row, r) => (
-                  <tr key={r} style={{ borderBottom: "1px solid #f1f5f9" }}>
-                    {row.map((cell, c) => {
-                      const sel = isSelected(r, c);
-                      const isNoteCol = header[c]?.toLowerCase().includes("ghi chú");
-                      const value = isNoteCol ? renderNote(cell) : cell;
+                    // NOTE có collapse
+                    if (cIdx === COL.NOTE) {
+                      const full = String(cell || "");
+                      const open = noteOpen.has(rIdx);
+                      const short = full.length > 90 ? full.slice(0, 90) + "…" : full;
 
-                      const isNoData = row[STATUS_COL] === "Không có dữ liệu";
                       return (
                         <td
-                          key={c}
-                          onMouseDown={() => handleMouseDown(r, c)}
-                          onMouseEnter={() => handleMouseEnter(r, c)}
-                          onClick={(e) => handleCellClick(e, r, c)}
-                          onDoubleClick={() => copyCell(cell)}
+                          key={cIdx}
+                          onMouseDown={(e) => onCellMouseDown(e, rIdx, cIdx)}
+                          onMouseEnter={(e) => onCellMouseEnter(e, rIdx, cIdx)}
+                          onDoubleClick={() => handleDoubleClickCopy(full)}
                           style={{
                             padding: "8px 10px",
-                            textAlign: "center",
-                            cursor: "cell",
-                            userSelect: "none",
-                            background: sel ? "#cfe8ff" : isNoData ? "#f6f7f9" : "transparent",
-                            color: isNoData ? "#8a8f98" : "#111827",
-                            borderLeft: "1px solid #f1f5f9",
                             borderRight: "1px solid #f1f5f9",
-                            whiteSpace: "nowrap",
+                            cursor: "cell",
+                            background: selectedCell ? "#dbeafe" : "transparent",
+                            userSelect: "none",
+                            verticalAlign: "top",
                           }}
-                          title={typeof cell === "string" ? cell.replace(/<[^>]+>/g, "") : ""}
+                          title={full}
                         >
-                          {value}
+                          <div style={{ lineHeight: 1.5 }}>
+                            {open ? full : short}{" "}
+                            {full.length > 90 && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggleNote(rIdx);
+                                }}
+                                style={{
+                                  border: "none",
+                                  background: "transparent",
+                                  color: "#2563eb",
+                                  cursor: "pointer",
+                                  padding: 0,
+                                  fontWeight: 600,
+                                }}
+                              >
+                                [{open ? "Thu gọn" : "Xem thêm"}]
+                              </button>
+                            )}
+                          </div>
                         </td>
                       );
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </>
+                    }
+
+                    // Các ô khác
+                    return (
+                      <td
+                        key={cIdx}
+                        onMouseDown={(e) => onCellMouseDown(e, rIdx, cIdx)}
+                        onMouseEnter={(e) => onCellMouseEnter(e, rIdx, cIdx)}
+                        onDoubleClick={() =>
+                          handleDoubleClickCopy(String(cell ?? ""))
+                        }
+                        style={{
+                          padding: "8px 10px",
+                          borderRight: "1px solid #f1f5f9",
+                          textAlign:
+                            typeof cell === "number" ? "right" : "left",
+                          whiteSpace: "nowrap",
+                          cursor: "cell",
+                          background: selectedCell ? "#dbeafe" : "transparent",
+                          userSelect: "none",
+                        }}
+                        title={String(cell ?? "")}
+                      >
+                        {cell}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );
